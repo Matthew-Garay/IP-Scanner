@@ -47,7 +47,7 @@ from ..actions.menu import (
 from ..analysis.audit import audit_device, audit_http, inspect_tls, risk_score
 from ..analysis.exposure import exposure_findings, exposure_score
 from ..core.models import (
-    COMMON_PORTS,
+    SCAN_PORTS,
     Device,
     HttpReport,
     ScanRequest,
@@ -72,7 +72,6 @@ from ..core.utils import (
     plan_targets,
 )
 from ..nettools.monitor import Monitor, MonitorEvent
-from ..nettools.profiles import PROFILES, get_profile
 from ..nettools.tools import (
     DNS_RECORD_TYPES,
     dns_lookup,
@@ -654,16 +653,17 @@ class IPInspectorApp(ctk.CTk):
         self._sections.append(self._tabs)
 
     def _build_scan_tab(self, parent: ctk.CTkBaseClass) -> None:
-        # Rows: 0 toolbar, 1 scan profiles, 2 filter bar, 3 results table.
+        # Rows: 0 toolbar, 1 filter bar, 2 results table. The profile row went
+        # away with the port selector: one fixed sweep replaced three modes and
+        # a list to edit, so there is no longer a setting to show here.
         parent.grid_columnconfigure(0, weight=1)
-        parent.grid_rowconfigure(3, weight=1)
+        parent.grid_rowconfigure(2, weight=1)
 
         self._build_scan_toolbar(parent)
-        self._build_profile_bar(parent)
         self._build_filter_bar(parent)
 
         holder = theme.panel(parent)
-        holder.grid(row=3, column=0, sticky="nsew", pady=(6, 0))
+        holder.grid(row=2, column=0, sticky="nsew", pady=(6, 0))
         holder.grid_columnconfigure(0, weight=1)
         holder.grid_rowconfigure(0, weight=1)
 
@@ -680,74 +680,7 @@ class IPInspectorApp(ctk.CTk):
             self, text=i18n.t("empty.hint"), font=ctk.CTkFont(size=14),
             text_color=theme.current().text_secondary,
         )
-        self._empty_hint.grid(row=2, column=0, sticky="nw", padx=20, pady=24)
-
-    def _build_profile_bar(self, parent: ctk.CTkBaseClass) -> None:
-        """Scan profiles as a dropdown.
-
-        The profiles used to sit as four buttons in a row, which pushed the
-        port list off the toolbar as soon as a fifth mode was added and gave
-        the row a visual weight it did not deserve -- this is a setting, not a
-        primary action. A dropdown states the current mode in one place and
-        folds the rest away.
-        """
-        bar = ctk.CTkFrame(parent, fg_color="transparent")
-        bar.grid(row=1, column=0, sticky="ew", padx=(2, 0), pady=(8, 4))
-        bar.grid_columnconfigure(3, weight=1)
-
-        ctk.CTkLabel(
-            bar, text=i18n.t("profile.hint").upper(),
-            font=ctk.CTkFont(size=10, weight="bold"),
-            text_color=theme.current().text_secondary,
-        ).grid(row=0, column=0, padx=(2, 8), sticky="w")
-
-        self._profile_var = ctk.StringVar(value=PROFILES[0].key)
-        self._profile_menu = ctk.CTkOptionMenu(
-            bar, variable=self._profile_var,
-            values=[i18n.t(f"profile.{p.key}") for p in PROFILES],
-            width=180, height=32, corner_radius=6,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            dropdown_font=ctk.CTkFont(size=12),
-            text_color=theme.current().text_primary,
-            fg_color=theme.current().surface,
-            button_color=theme.current().primary,
-            button_hover_color=theme.current().primary_hover,
-            dropdown_fg_color=theme.current().surface,
-            dropdown_text_color=theme.current().text_primary,
-            dropdown_hover_color=theme.current().surface_alt
-            if hasattr(theme.current(), "surface_alt")
-            else theme.current().surface,
-            command=self._on_profile_choice,
-        )
-        self._profile_menu.grid(row=0, column=1, padx=(0, 10), sticky="w")
-
-        self._profile_hint = ctk.CTkLabel(
-            bar, text="", anchor="w", font=ctk.CTkFont(size=11),
-            text_color=theme.current().text_secondary,
-        )
-        self._profile_hint.grid(row=0, column=3, sticky="w", padx=4)
-        self._select_profile(PROFILES[0].key, fill_ports=True)
-
-    def _on_profile_choice(self, label: str) -> None:
-        """Map the chosen menu label back to its profile key."""
-        for profile in PROFILES:
-            if i18n.t(f"profile.{profile.key}") == label:
-                self._select_profile(profile.key)
-                return
-
-    def _select_profile(self, key: str, fill_ports: bool = True) -> None:
-        """Switch mode and sync the toolbar with the profile's settings."""
-        profile = get_profile(key)
-        self._profile_var.set(i18n.t(f"profile.{profile.key}"))
-        self._active_profile = profile
-        if fill_ports:
-            self._ports_entry.delete(0, "end")
-            self._ports_entry.insert(0, ",".join(str(p) for p in profile.ports))
-        self._profile_hint.configure(
-            text=f"{i18n.t(f'profile.{profile.key}.desc')}   "
-                 f"{i18n.t('profile.ports', ports=profile.ports_label())}"
-        )
-
+        self._empty_hint.grid(row=1, column=0, sticky="nw", padx=20, pady=24)
 
     def _build_scan_toolbar(self, parent: ctk.CTkBaseClass) -> None:
         bar = ctk.CTkFrame(parent, fg_color="transparent")
@@ -755,13 +688,11 @@ class IPInspectorApp(ctk.CTk):
 
         for index, (caption_key, width, placeholder_key, attr) in enumerate((
             ("label.range", 300, "ph.range", "_range_entry"),
-            ("label.ports", 240, "ph.ports", "_ports_entry"),
         )):
             block = ctk.CTkFrame(bar, fg_color="transparent")
             block.grid(row=0, column=index * 2, sticky="w", padx=(12, 6), pady=10)
             # The range is the one field the app cannot run without, so it is
-            # marked as required instead of being left to look optional next
-            # to the port list, which genuinely is optional.
+            # marked as required.
             caption = i18n.t(caption_key)
             if attr == "_range_entry":
                 caption = f"{caption} *"
@@ -791,19 +722,9 @@ class IPInspectorApp(ctk.CTk):
                     "<FocusOut>",
                     lambda _e: self._paint_field_state(self._range_entry),
                 )
-            else:
-                self._ports_preview = ctk.CTkLabel(
-                    block, text="", anchor="w", font=ctk.CTkFont(size=11),
-                    text_color=theme.current().text_secondary,
-                )
-                self._ports_preview.grid(row=2, column=0, sticky="w", pady=(2, 0))
-                entry.bind(
-                    "<KeyRelease>",
-                    lambda _e: self._update_ports_preview(),
-                )
 
         actions = ctk.CTkFrame(bar, fg_color="transparent")
-        actions.grid(row=0, column=4, sticky="e", padx=(6, 12))
+        actions.grid(row=0, column=2, sticky="e", padx=(6, 12))
         self._start_button = theme.primary_button(
             actions, "\u25B6  " + i18n.t("btn.start"), self._on_start_scan,
             width=150, height=38,
@@ -843,13 +764,8 @@ class IPInspectorApp(ctk.CTk):
         self._export_json_button.configure(state="disabled")
         self._export_json_button.grid(row=0, column=5, padx=4)
 
-        toggles = ctk.CTkFrame(bar, fg_color="transparent")
-        toggles.grid(row=0, column=5, sticky="e", padx=(10, 16))
-        self._ports_toggle = ctk.CTkSwitch(
-            toggles, text=i18n.t("sw.ports"), font=ctk.CTkFont(size=12)
-        )
-        self._ports_toggle.select()
-        self._ports_toggle.grid(row=0, column=0, padx=6)
+        # The port switch is gone along with the port field: ports are always
+        # swept, so there was nothing left for it to turn off.
 
     def _schedule_target_preview(self, _event=None) -> None:
         """Recount the hosts once the typing settles, not on every keypress."""
@@ -1216,7 +1132,7 @@ class IPInspectorApp(ctk.CTk):
                     self, text=i18n.t("empty.hint"), font=ctk.CTkFont(size=14),
                     text_color=theme.current().text_secondary,
                 )
-                self._empty_hint.grid(row=2, column=0, sticky="nw", padx=20, pady=24)
+                self._empty_hint.grid(row=1, column=0, sticky="nw", padx=20, pady=24)
         elif self._empty_hint is not None and self._empty_hint.winfo_exists():
             self._empty_hint.destroy()
             self._empty_hint = None
@@ -1269,29 +1185,6 @@ class IPInspectorApp(ctk.CTk):
     # ------------------------------------------------------------------
     # Scan lifecycle
     # ------------------------------------------------------------------
-    def _parse_ports(self) -> tuple[int, ...]:
-        """Validate the user-typed port list, falling back to the defaults."""
-        raw = self._ports_entry.get().strip()
-        if not raw:
-            return COMMON_PORTS
-
-        ports: set[int] = set()
-        for chunk in raw.replace(";", ",").split(","):
-            chunk = chunk.strip()
-            if not chunk:
-                continue
-            if "-" in chunk:
-                try:
-                    start, end = (int(part) for part in chunk.split("-", 1))
-                except ValueError:
-                    continue
-                ports.update(range(min(start, end), max(start, end) + 1))
-            elif chunk.isdigit():
-                ports.add(int(chunk))
-
-        valid = tuple(sorted(port for port in ports if 1 <= port <= 65535))
-        return valid or COMMON_PORTS
-
     def _report_payload(self) -> dict:
         """Everything the report needs, in one place for both formats."""
         summary = ""
@@ -1381,21 +1274,20 @@ class IPInspectorApp(ctk.CTk):
             self._set_phase(i18n.t("target.partial",
                                    items=", ".join(plan.problems)))
 
+        # One fixed sweep: every port in SCAN_PORTS, with the tuning that the
+        # former "deep" profile used, because that is the setting the fixed
+        # range implies. Ports are never skipped and never edited by hand.
         request = ScanRequest(target_range=target_range)
         request.interface = self._selected_interface()
-        request.ports = self._parse_ports()
-        request.scan_ports_enabled = bool(self._ports_toggle.get())
-        # The active profile supplies timeouts, concurrency and hints.
-        active = getattr(self, "_active_profile", get_profile("custom"))
-        active.apply(request)
-        # The key, not the menu label: the dropdown holds a translated string
-        # and this field is matched against profile keys by the report writer.
-        request.profile = active.key
-        # The user's explicit port list always wins over the profile.
-        request.ports = self._parse_ports()
-        # Hostnames always resolve: there is no toolbar switch anymore,
-        # so force it on after the profile is applied.
+        request.ports = SCAN_PORTS
+        request.scan_ports_enabled = True
+        request.port_timeout = 1.2
+        request.concurrency = 250
         request.resolve_hostnames = True
+        request.identify_models = True
+        request.advanced_banners = True
+        request.device_hints = ("exposure",)
+        request.profile = "full"
         self._clear_devices()
         self._set_scanning(True)
         self._scanner.reset()
@@ -1427,59 +1319,6 @@ class IPInspectorApp(ctk.CTk):
             border_color=theme.current().online if valid
             else theme.warning(),
         )
-
-    def _update_ports_preview(self) -> None:
-        """Count the ports the typed list resolves to, and flag nonsense.
-
-        ``_parse_ports`` silently drops anything unparseable and falls back to
-        the defaults, which is the right behaviour for a scan but a terrible
-        one for feedback: a typo looked exactly like a deliberate choice. This
-        says what the field will actually sweep.
-        """
-        raw = self._ports_entry.get().strip()
-        if not raw:
-            self._ports_preview.configure(
-                text=i18n.t("ports.empty"),
-                text_color=theme.current().text_secondary,
-            )
-            self._ports_entry.configure(border_color=theme.current().field_border)
-            return
-
-        ports = self._parse_ports()
-        malformed = self._malformed_ports(raw)
-        if malformed:
-            self._ports_preview.configure(
-                text=i18n.t("ports.invalid", items=", ".join(malformed[:4])),
-                text_color=theme.warning(),
-            )
-            self._ports_entry.configure(border_color=theme.warning())
-            return
-        self._ports_preview.configure(
-            text=i18n.t("ports.count", count=len(ports)),
-            text_color=theme.current().text_secondary,
-        )
-        self._ports_entry.configure(border_color=theme.current().field_focus)
-
-    @staticmethod
-    def _malformed_ports(raw: str) -> list[str]:
-        """The chunks of a port list that no port number could be read from."""
-        bad: list[str] = []
-        for chunk in raw.replace(";", ",").split(","):
-            chunk = chunk.strip()
-            if not chunk:
-                continue
-            ok = (
-                chunk.isdigit() and 1 <= int(chunk) <= 65535
-            ) or (
-                "-" in chunk
-                and all(part.strip().isdigit()
-                        for part in chunk.split("-", 1))
-                and all(1 <= int(part) <= 65535
-                        for part in chunk.split("-", 1))
-            )
-            if not ok:
-                bad.append(chunk)
-        return bad
 
     def _set_scanning(self, scanning: bool) -> None:
         self._scanning = scanning
