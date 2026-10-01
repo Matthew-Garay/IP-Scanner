@@ -1133,32 +1133,41 @@ class IPInspectorApp(ctk.CTk):
             return
 
         # Anything deferred by an earlier paint goes first, and newly flagged
-        # devices join the queue behind it.
-        queue: list[Device] = []
+        # devices join the queue behind it. The queue holds addresses, not
+        # Device objects: a device that is still waiting for its widget may be
+        # enriched (a hostname, then open ports) in the meantime, and the row
+        # must show the latest state rather than the snapshot that queued it.
+        queue: list[str] = []
         seen: set[str] = set()
         for device in self._pending_rows:
-            if device.ip_address in self._devices and device.ip_address not in seen:
-                seen.add(device.ip_address)
-                queue.append(device)
-        for key in self._dirty:
-            device = self._devices.get(key)
-            if device is not None and key not in seen:
+            key = device.ip_address
+            if key in self._devices and key not in seen:
                 seen.add(key)
-                queue.append(device)
+                queue.append(key)
+        for key in self._dirty:
+            if key in self._devices and key not in seen:
+                seen.add(key)
+                queue.append(key)
+
+        # New rows are appended in the order they were found, but the table is
+        # meant to read in sort order. Sorting the queue (a list, so cheap) is
+        # what keeps a burst of arrivals from landing in the table backwards.
+        queue.sort(key=lambda key: self._devices[key].sort_key(self._sort_key),
+                   reverse=self._sort_reverse)
 
         budget = ROW_BUDGET_PER_PAINT
         added = 0
-        for index, device in enumerate(queue):
+        for index, key in enumerate(queue):
             if added >= budget:
-                # Out of budget: keep the rest queued, still in device order.
-                self._pending_rows = queue[index:]
+                # Out of budget: keep the rest queued, for the next tick.
+                self._pending_rows = [self._devices[k] for k in queue[index:]]
                 self._dirty.clear()
                 self._toggle_empty_hint(self._table.row_count())
                 self._update_sort_label(self._table.row_count())
                 self._schedule_next_paint()
                 return
-            key = device.ip_address
-            if not self._passes_filter(device):
+            device = self._devices.get(key)
+            if device is None or not self._passes_filter(device):
                 continue
             cells = self._row_values(device)
             dot = self._state_tags(device)
