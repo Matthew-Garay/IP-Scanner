@@ -13,11 +13,18 @@ from typing import Literal
 
 PortState = Literal["open", "closed", "filtered"]
 
-#: Ports most often exposed by reachable machines. Used as the GUI default.
+#: Ports most often exposed by reachable machines. Kept as the fallback name
+#: for the well-known services and the report writer.
 COMMON_PORTS: tuple[int, ...] = (
     21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 389, 443, 445, 587, 631,
     993, 995, 1433, 3306, 3389, 5000, 5432, 5900, 6379, 8080, 8443, 9100,
 )
+
+#: Every port the scanner sweeps. The operator no longer picks a port list, so
+#: the range is fixed and every sweep asks the same question: which of these is
+#: reachable. Anything above 1024 is rarely reachable from a LAN and is left
+#: to the Tools tab's own diagnostics.
+SCAN_PORTS: tuple[int, ...] = tuple(range(1, 1025))
 
 #: Fallback service name when a port is open but stays silent on connect.
 KNOWN_SERVICES: dict[int, str] = {
@@ -220,12 +227,14 @@ class ScanRequest:
     """Immutable description of a single scan run."""
 
     target_range: str
-    ports: tuple[int, ...] = COMMON_PORTS
+    ports: tuple[int, ...] = SCAN_PORTS
     resolve_hostnames: bool = True
+    #: Ports are always swept. The switch that used to disable this is gone:
+    #: a sweep that silently skipped them was not what "scan" meant to anyone.
     scan_ports_enabled: bool = True
     identify_models: bool = True
     #: Scan profile key that produced this request.
-    profile: str = "custom"
+    profile: str = "full"
     #: Read deeper banners (UPnP, ONVIF, product strings).
     advanced_banners: bool = False
     #: Profile-specific device classes to look for.

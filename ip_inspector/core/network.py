@@ -521,27 +521,47 @@ class NetworkScanner:
     async def _scan_ports_concurrently(
         self, devices: list[Device], request: ScanRequest
     ) -> None:
-        """Probe every device under a single global concurrency cap."""
+        """Probe every device under a single global concurrency cap.
+
+        Each (host, port) pair is its own task rather than each host walking
+        its ports in turn. A host probed sequentially spends one full timeout
+        per closed port, so a 1024-port sweep of a single machine took the
+        timeout multiplied by 1024 -- twenty minutes -- while the semaphore
+        sat idle because a single worker could only ever hold one permit.
+        One task per pair lets the cap actually mean something.
+        """
         total = len(devices) * len(request.ports)
         self._emit(ScannerEvent("Ports", f"Probing {len(request.ports)} ports", 0, total))
 
         semaphore = asyncio.Semaphore(max(1, request.concurrency))
+        results: dict[str, list[Port]] = {d.ip_address: [] for d in devices}
         completed = 0
 
-        async def worker(device: Device) -> None:
+        async def probe(device: Device, port_number: int) -> None:
             nonlocal completed
-            results: list[Port] = []
-            for port_number in request.ports:
-                if self.is_stopping:
-                    break
-                async with semaphore:
-                    results.append(
-                        await self._probe_port(device.ip_address, port_number, request.port_timeout)
-                    )
-                completed += 1
-            device.open_ports = results
+            if self.is_stopping:
+                return
+            async with semaphore:
+                port = await self._probe_port(
+                    device.ip_address, port_number, request.port_timeout
+                )
+            results[device.ip_address].append(port)
+            completed += 1
+            # Progress is emitted as the sweep runs so the bar moves, but only
+            # every so often: one event per port would flood the queue the UI
+            # drains, which is its own kind of freeze.
+            if completed % 100 == 0 or completed == total:
+                self._emit(ScannerEvent("Ports", "", completed, total))
 
-        await asyncio.gather(*(worker(device) for device in devices))
+        await asyncio.gather(
+            *(probe(device, port) for device in devices
+              for port in request.ports)
+        )
+
+        for device in devices:
+            device.open_ports = sorted(
+                results[device.ip_address], key=lambda port: port.number
+            )
         self._emit(ScannerEvent("Ports", "Port scan complete", total, total))
 
     async def _tcp_ping(self, ip: str, port: int, timeout: float) -> float | None:
