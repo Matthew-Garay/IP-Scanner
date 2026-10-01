@@ -1,0 +1,42 @@
+# Entornos virtuales y dependencias
+.venv/
+venv/
+env/
+node_modules/
+
+# Bytecode y cachés de Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Artefactos de empaquetado
+build/
+dist/
+*.egg-info/
+*.spec.bak
+
+# Salidas generadas en tiempo de ejecución
+salida/
+*.log
+*.tmp
+*.bak
+*.old
+
+# Datos locales del operador
+*.db
+*.sqlite3
+inventory.json
+
+# Editores y sistema operativo
+.vscode/
+.idea/
+*.swp
+*~
+Thumbs.db
+desktop.ini
+.DS_Store
