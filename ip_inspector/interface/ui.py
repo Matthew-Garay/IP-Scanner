@@ -935,7 +935,17 @@ class IPInspectorApp(ctk.CTk):
         return devices
 
     def _state_tags(self, device: Device) -> str:
-        """Colour for the status dot: green online, amber VPN, red alert."""
+        """Colour for the status dot: red alerts, amber attention, green fine.
+
+        The order matters. A host with a critical or high finding is the thing
+        an operator must not miss, so it takes the warning colour even when it
+        is up; a host that merely has a VPN or a middling risk is amber; only
+        a clean reachable host is green. An offline host used to be painted
+        with the amber used for a VPN, which read as "something to think about"
+        rather than "this machine is not answering".
+        """
+        if device.alerts_count or device.worst_severity == "critical":
+            return theme.warning()
         if not device.is_alive:
             return theme.warning()
         if device.is_vpn_active or device.risk_score >= 15:
