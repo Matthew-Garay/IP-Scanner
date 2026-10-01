@@ -1,0 +1,12 @@
+# Production dependencies.
+#
+# netifaces is intentionally excluded: it ships no wheels for Python
+# 3.13+, which would force a Visual C++ build toolchain install. psutil
+# already exposes every interface detail the scanner needs.
+#
+# mac-vendor-lookup provides the IEEE OUI vendor list; it is fetched and
+# cached on first run, so the scanner works offline afterwards.
+customtkinter>=5.2.0
+scapy>=2.5.0
+psutil>=5.9.0
+mac-vendor-lookup>=0.1.12
