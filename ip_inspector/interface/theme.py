@@ -182,6 +182,9 @@ _TABLES: list["ResultTable"] = []
 #: Live sparklines, restyled for the same reason.
 _SPARKLINES: list["Sparkline"] = []
 
+#: Live device-type icons, restyled for the same reason.
+_ICONS: list["TypeIcon"] = []
+
 #: Ceiling of a table sparkline in milliseconds. Fixed, so the row of a quiet
 #: host and the row of a struggling one can be compared side by side.
 SPARKLINE_SCALE_MS = 120.0
@@ -459,6 +462,226 @@ class Sparkline(ctk.CTkFrame):
 
 
 # ---------------------------------------------------------------------------
+# Device-type icon
+# ---------------------------------------------------------------------------
+
+
+#: How each device class is drawn, as a key into the drawing routines below.
+#: The old approach used BMP glyphs (a filled square for every desktop, a
+#: striped square for every server), which told an operator nothing: three
+#: different machines drew the same mark. Vector shapes are recognisable at
+#: this size and cannot go missing on a machine whose fonts lack a symbol.
+TYPE_ICON_KINDS: dict[str, str] = {
+    "Router": "router",
+    "Network Device": "switch",
+    "IP Camera": "camera",
+    "Printer": "printer",
+    "Windows PC": "desktop",
+    "Mac / Apple": "desktop",
+    "Apple Device": "mobile",
+    "Mobile / Tablet": "mobile",
+    "Linux Server": "server",
+    "Server": "server",
+    "Raspberry Pi": "board",
+    "IoT Device": "board",
+}
+
+#: Used for anything the classifier could not place.
+UNKNOWN_ICON_KIND = "unknown"
+
+
+def icon_kind(device_type: str) -> str:
+    """Drawing routine for a device class, never empty."""
+    return TYPE_ICON_KINDS.get(device_type, UNKNOWN_ICON_KIND)
+
+
+class TypeIcon(ctk.CTkFrame):
+    """
+    A small pictogram of the device class, drawn rather than typeset.
+
+    Every glyph approach was a compromise: a BMP symbol renders only where the
+    font carries it, and the symbols that do carry are so close together that a
+    desktop, a server and a switch all read as the same box. Drawing the shape
+    on a canvas makes the mark explicit and immune to the installed fonts,
+    which is the same reason :class:`Sparkline` paints itself.
+    """
+
+    def _ink(self) -> str:
+        """Colour the pictogram is drawn in."""
+        return current().text_secondary
+
+    def __init__(self, master, width: int = 20, height: int = 20,
+                 kind: str = UNKNOWN_ICON_KIND) -> None:
+        super().__init__(master, width=width, height=height,
+                         fg_color="transparent", corner_radius=0, border_width=0)
+        self._kind = kind
+        self._striped = False
+        self._background = current().surface
+
+        self.grid_propagate(False)
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+        self._canvas = tk.Canvas(
+            self, width=width, height=height, highlightthickness=0, bd=0,
+            background=self._background,
+        )
+        self._canvas.grid(row=0, column=0, sticky="nsew")
+        self.bind("<Configure>", lambda _e: self._redraw())
+        # Drawn up front from the requested size. <Configure> only arrives once
+        # the row has been laid out, and a table built before the window is
+        # first shown would otherwise hold a row of blank cells until the
+        # operator resizes something.
+        self.bind("<Map>", lambda _e: self._redraw())
+        self.after_idle(self._redraw)
+        _ICONS.append(self)
+        self._redraw()
+
+    def destroy(self) -> None:
+        """Stop tracking this widget so the registry cannot grow forever."""
+        try:
+            _ICONS.remove(self)
+        except ValueError:
+            pass
+        super().destroy()
+
+    def set_kind(self, kind: str) -> None:
+        """Switch the pictogram to another device class."""
+        if kind != self._kind:
+            self._kind = kind
+            self._redraw()
+
+    def set_background(self, colour: str) -> None:
+        """Blend the icon into its parent, used by the striped table rows."""
+        self._striped = True
+        if colour == self._background:
+            return
+        self._background = colour
+        self._canvas.configure(background=colour)
+        self._redraw()
+
+    def refresh(self) -> None:
+        """Re-draw after an appearance mode change."""
+        if not self._striped:
+            self._background = current().surface
+            self._canvas.configure(background=self._background)
+        self._redraw()
+
+    def _redraw(self) -> None:
+        canvas = self._canvas
+        canvas.delete("all")
+        # A widget that has not been laid out yet reports a real size of one
+        # pixel, so the requested size stands in until <Configure> arrives. A
+        # canvas left at one pixel would draw nothing at all, which is how an
+        # icon silently becomes a blank cell in a table built before the
+        # window is first shown.
+        w = canvas.winfo_width()
+        h = canvas.winfo_height()
+        if w < 8 or h < 8:
+            w, h = canvas.winfo_reqwidth(), canvas.winfo_reqheight()
+        if w < 8 or h < 8:
+            return
+        painter = getattr(self, "_draw_" + self._kind, self._draw_unknown)
+        painter(canvas, w, h, self._ink())
+
+    def _box(self, w, h, pad_x=2, pad_y=2):
+        """Inset rectangle every routine draws inside, so shapes keep their
+        proportions whatever the row height is."""
+        s = min(w, h)
+        x0, y0 = (w - s) / 2 + pad_x, (h - s) / 2 + pad_y
+        return x0, y0, x0 + s - pad_x - 1, y0 + s - pad_y - 1
+
+    # -- the pictograms --------------------------------------------------
+    def _draw_router(self, canvas, w, h, ink) -> None:
+        """A box with a crossing arrow: the thing traffic goes through."""
+        x0, y0, x1, y1 = self._box(w, h, 2, 3)
+        canvas.create_rectangle(x0, y0, x1, y1, outline=ink, width=2)
+        mid = (y0 + y1) / 2
+        canvas.create_line(x0 + 2, mid, x1 - 4, mid, fill=ink, width=2)
+        canvas.create_polygon(
+            (x1 - 2, mid, x1 - 6, mid - 3.5, x1 - 6, mid + 3.5), fill=ink, outline=""
+        )
+        canvas.create_line(mid, y0 + 2, mid, y1 - 2, fill=ink, width=1, dash=(2, 2))
+
+    def _draw_switch(self, canvas, w, h, ink) -> None:
+        """A chassis with a row of ports and a link light."""
+        x0, y0, x1, y1 = self._box(w, h, 2, 3)
+        canvas.create_rectangle(x0, y0, x1, y1, outline=ink, width=2)
+        step = (x1 - x0 - 5) / 4
+        for index in range(4):
+            px = x0 + 3 + index * step
+            canvas.create_rectangle(px, y1 - 5.5, px + step - 2, y1 - 2.5,
+                                    outline=ink, fill="")
+        canvas.create_oval(x1 - 5, y0 + 2, x1 - 3, y0 + 4, fill=ink, outline="")
+
+    def _draw_camera(self, canvas, w, h, ink) -> None:
+        """A lens: a body with a big circle pointing out of it."""
+        s = min(w, h)
+        cx, cy = w / 2, h / 2
+        r = s / 2 - 3
+        canvas.create_rectangle(cx - r, cy - r * 0.78, cx + r * 0.45, cy + r * 0.78,
+                                outline=ink, width=2)
+        canvas.create_oval(cx - r * 0.5, cy - r * 0.72, cx + r * 0.7, cy + r * 0.72,
+                           outline=ink, width=2)
+        canvas.create_line(cx + r * 0.45, cy - r * 0.45, cx + r * 0.9, cy - r * 0.85,
+                           fill=ink, width=2)
+
+    def _draw_printer(self, canvas, w, h, ink) -> None:
+        """Paper coming out of a printer."""
+        s = min(w, h)
+        x0, y0 = (w - s) / 2 + 2, (h - s) / 2 + 1
+        x1, y1 = x0 + s - 5, y0 + s - 3
+        canvas.create_rectangle(x0, y0 + 4, x1, y1 - 4, outline=ink, width=2)
+        canvas.create_rectangle(x0 + 3, y0 - 1, x1 - 3, y0 + 5,
+                                outline=ink, fill="", width=2)
+        canvas.create_oval(x1 - 4, y1 - 7.5, x1 - 2.5, y1 - 6, fill=ink, outline="")
+
+    def _draw_desktop(self, canvas, w, h, ink) -> None:
+        """A monitor on a stand: any workstation."""
+        x0, y0, x1, y1 = self._box(w, h, 2, 1)
+        base = min(w, h) / 2 - 1
+        canvas.create_rectangle(x0, y0, x1, base, outline=ink, width=2)
+        mid = (x0 + x1) / 2
+        canvas.create_line(mid, base, mid, base + 3, fill=ink, width=2)
+        canvas.create_line(x0 + 3, base + 3, x1 - 3, base + 3, fill=ink, width=2)
+
+    def _draw_server(self, canvas, w, h, ink) -> None:
+        """A rack: stacked units with a status light each."""
+        x0, y0, x1, y1 = self._box(w, h, 2, 2)
+        canvas.create_rectangle(x0, y0, x1, y1, outline=ink, width=2)
+        unit = (y1 - y0) / 3
+        for index in range(3):
+            top = y0 + index * unit
+            if index:
+                canvas.create_line(x0, top, x1, top, fill=ink)
+            canvas.create_oval(x0 + 2, top + unit / 2 - 1.2, x0 + 4.4,
+                               top + unit / 2 + 1.2, fill=ink, outline="")
+
+    def _draw_board(self, canvas, w, h, ink) -> None:
+        """A single-board computer: a board with a chip and pin rows."""
+        x0, y0, x1, y1 = self._box(w, h, 2, 2)
+        canvas.create_rectangle(x0, y0, x1, y1, outline=ink, width=2)
+        canvas.create_rectangle(x0 + 3.5, y0 + 3.5, x1 - 3.5, y1 - 3.5, outline=ink)
+        for edge in (x0, x1):
+            canvas.create_line(edge, y0 + 1, edge, y1 - 1, fill=ink, dash=(2, 2))
+
+    def _draw_mobile(self, canvas, w, h, ink) -> None:
+        """A slab with a home dot: a phone or a tablet."""
+        s = min(w, h)
+        x0, y0 = (w - s) / 2 + 3, (h - s) / 2 + 1
+        x1, y1 = x0 + s - 7, y0 + s - 3
+        canvas.create_rectangle(x0, y0, x1, y1, outline=ink, width=2)
+        mid = (x0 + x1) / 2
+        canvas.create_oval(mid - 1.3, y1 - 4, mid + 1.3, y1 - 1.4, fill=ink, outline="")
+
+    def _draw_unknown(self, canvas, w, h, ink) -> None:
+        """A dashed box: recognised as a device, but not classified."""
+        x0, y0, x1, y1 = self._box(w, h, 2, 2)
+        canvas.create_rectangle(x0, y0, x1, y1, outline=ink, dash=(2, 2))
+        canvas.create_line(x0 + 3, (y0 + y1) / 2, x1 - 3, (y0 + y1) / 2,
+                           fill=ink, width=2)
+
+
+# ---------------------------------------------------------------------------
 # Result table
 # ---------------------------------------------------------------------------
 
@@ -493,7 +716,7 @@ class ResultTable(ctk.CTkFrame):
     ROW_FONT_PADDING = 4
 
     def __init__(self, master, columns, on_sort=None, on_select=None,
-                 sparkline=None, dot=None):
+                 sparkline=None, dot=None, icon=None, icons=None):
         super().__init__(master, fg_color="transparent", corner_radius=4)
         # columns: (label, width, anchor, mono, align)
         self._columns = columns
@@ -502,6 +725,13 @@ class ResultTable(ctk.CTkFrame):
         self._sparkline = sparkline
         #: Column whose text is painted with the row's status colour.
         self._dot = dot
+        #: Column holding a :class:`TypeIcon` instead of a label, and the
+        #: mapping that tells each key which pictogram to draw.
+        self._icon = icon
+        # An empty dict is falsy, so ``icons or {}`` would quietly swap in a
+        # different mapping and every row would fall back to the unknown
+        # pictogram. The caller's dict is kept by reference instead.
+        self._icons = {} if icons is None else icons
         self._rows: dict[str, tuple] = {}
         self._order: list[str] = []
         self._selected: str | None = None
@@ -625,6 +855,12 @@ class ResultTable(ctk.CTkFrame):
                 )
                 widget.set_samples(samples or [])
                 widget.grid(row=0, column=index, sticky="ew", padx=2)
+            elif index == self._icon:
+                widget = TypeIcon(
+                    row, width=width - 2, height=self.ROW_HEIGHT - 8,
+                    kind=self._icons.get(key, UNKNOWN_ICON_KIND),
+                )
+                widget.grid(row=0, column=index, sticky="w", padx=2)
             elif index == self._dot:
                 # Cell widths are the column width minus the padding on both
                 # sides, so a row grid lands exactly on the header grid.
@@ -674,7 +910,11 @@ class ResultTable(ctk.CTkFrame):
         _row, widgets, _old_dot = entry
         for index, widget in enumerate(widgets):
             value = cells[index] if index < len(cells) else ""
-            if isinstance(widget, ctk.CTkLabel):
+            if isinstance(widget, TypeIcon):
+                # The pictogram is keyed by row, not by cell text, so it needs
+                # its own refresh path rather than the label one.
+                widget.set_kind(self._icons.get(key, UNKNOWN_ICON_KIND))
+            elif isinstance(widget, ctk.CTkLabel):
                 try:
                     if widget.cget("text") != value:
                         widget.configure(text=value)

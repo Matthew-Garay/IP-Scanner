@@ -158,6 +158,10 @@ CATALOG: dict[str, dict[str, str]] = {
     "col.mac": {"en": "MAC", "es": "MAC"},
     "col.vendor": {"en": "Vendor", "es": "Marca"},
     "col.type": {"en": "Type", "es": "Tipo"},
+    # The pictogram column carries no label: it only repeats the type beside
+    # the icon, so an empty header keeps the column from looking like a second
+    # field to read.
+    "col.icon": {"en": "", "es": ""},
     "col.vpn": {"en": "VPN", "es": "VPN"},
     "col.risk": {"en": "Risk", "es": "Riesgo"},
     "col.ports": {"en": "Ports", "es": "Puertos"},
