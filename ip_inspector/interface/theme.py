@@ -763,14 +763,25 @@ class ResultTable(ctk.CTkFrame):
                 index, minsize=width,
                 weight=1 if index == len(self._columns) - 1 else 0,
             )
+            # Each heading lives in a fixed-width holder that refuses to grow. A
+            # button sizes its column to whatever its caption needs, and
+            # "STATUS" needs more than the 20px this column is allowed, so the
+            # header ended up wider than the rows below it and every value sat
+            # to the left of the heading it belonged to.
+            holder = ctk.CTkFrame(
+                header, width=width, height=26, fg_color="transparent",
+                corner_radius=0,
+            )
+            holder.grid(row=0, column=index, sticky="ew")
+            holder.grid_propagate(False)
             button = ctk.CTkButton(
-                header, text=label.upper(), width=width - 4, height=26,
+                holder, text=label.upper(), width=width, height=26,
                 corner_radius=3, fg_color="transparent", hover_color=None,
                 text_color=("gray35", "gray62"),
                 font=("Segoe UI", self.HEADER_FONT_SIZE, "bold"), anchor=anchor,
                 command=(lambda i: self._on_sort(i)) if self._on_sort else None,
             )
-            button.grid(row=0, column=index, sticky="ew", padx=1)
+            button.grid(row=0, column=0, sticky="ew")
 
         self._body = ctk.CTkScrollableFrame(
             self, fg_color="transparent", corner_radius=0,
@@ -789,9 +800,11 @@ class ResultTable(ctk.CTkFrame):
         """Re-apply palette colours to header and existing rows."""
         pal = current()
         for index in range(len(self._columns)):
-            self._header.grid_slaves(row=0, column=index)[0].configure(
-                text_color=pal.text_secondary,
-            )
+            # The caption now sits on a button inside a fixed-width holder, so
+            # the widget that carries the colour is one level down.
+            holder = self._header.grid_slaves(row=0, column=index)[0]
+            for button in holder.grid_slaves(row=0, column=0):
+                button.configure(text_color=pal.text_secondary)
         self._restyle_all()
 
     def _restyle_all(self) -> None:
@@ -837,10 +850,17 @@ class ResultTable(ctk.CTkFrame):
             self._body, fg_color="transparent", height=self.ROW_HEIGHT,
             corner_radius=3, border_width=1,
         )
-        row.grid(row=position, column=0, sticky="ew", padx=1, pady=0)
-        # The trailing column absorbs the slack, keeping it flush with the
-        # right edge of the header instead of pushing the first cell wide.
-        row.grid_columnconfigure(len(self._columns) - 1, weight=1)
+        row.grid(row=position, column=0, sticky="ew", pady=0)
+        # Every row reserves exactly the widths the header reserved, and the
+        # trailing column absorbs the slack in both. Without this each row
+        # sized its own columns from its own text, so a long hostname stretched
+        # the columns beside it and every value drifted left of the header it
+        # belonged to -- the grid looked misaligned rather than merely ragged.
+        last = len(self._columns) - 1
+        for index, spec in enumerate(self._columns):
+            row.grid_columnconfigure(
+                index, minsize=spec[1], weight=1 if index == last else 0
+            )
         row.grid_propagate(False)
         row.bind("<Button-1>", lambda _e, k=key: self._select(k))
 
@@ -860,16 +880,19 @@ class ResultTable(ctk.CTkFrame):
                     row, width=width - 2, height=self.ROW_HEIGHT - 8,
                     kind=self._icons.get(key, UNKNOWN_ICON_KIND),
                 )
-                widget.grid(row=0, column=index, sticky="w", padx=2)
+                widget.grid(row=0, column=index, sticky="ew", padx=2)
             elif index == self._dot:
                 # Cell widths are the column width minus the padding on both
-                # sides, so a row grid lands exactly on the header grid.
+                # sides, so a row grid lands exactly on the header grid. The
+                # label is centred inside that width: the status dot belongs
+                # under its heading, not against the left edge of the column.
                 widget = ctk.CTkLabel(
                     row, text=value, width=width - 4, height=self.ROW_HEIGHT - 4,
+                    anchor="center",
                     text_color=dot or (pal.online if value else pal.text_secondary),
                     font=("Segoe UI", self.ROW_FONT_SIZE, "bold"),
                 )
-                widget.grid(row=0, column=index, sticky="w", padx=(4, 0))
+                widget.grid(row=0, column=index, sticky="ew", padx=2)
             else:
                 family = "Consolas" if mono else "Segoe UI"
                 # Native Tk labels clip a 12pt face against a 34px row unless
