@@ -126,21 +126,21 @@ TAB_NAME_WIDTH = 16
 #: ``monospace`` is mandatory on the technical columns: addresses, MACs,
 #: TTL, latency and the port list, where character alignment carries meaning.
 DEVICE_COLUMNS: tuple[tuple[str, int, str, bool, str], ...] = (
-    ("col.ip",        128, "w",      True,  "ip"),
-    ("col.status",     22, "center", False, "status"),
-    ("col.icon",       26, "center", False, "type"),
-    ("col.type",      128, "w",      False, "type"),
-    ("col.hostname",  170, "w",      False, "hostname"),
-    ("col.mac",       148, "w",      True,  "mac"),
-    ("col.vendor",    168, "w",      False, "vendor"),
-    ("col.model",     162, "w",      False, "model"),
-    ("col.vpn",        46, "center", False, "vpn"),
-    ("col.ttl",        40, "center", True,  "ttl"),
-    ("col.latency",    58, "center", True,  "latency"),
-    ("col.method",     70, "center", False, "method"),
-    ("col.risk",       50, "center", True,  "risk"),
-    ("col.alerts",     64, "center", False, "alerts"),
-    ("col.ports",     300, "w",      True,  "ports"),
+    ("col.ip",        118, "w",      True,  "ip"),
+    ("col.status",     20, "center", False, "status"),
+    ("col.icon",       24, "center", False, "type"),
+    ("col.type",       96, "w",      False, "type"),
+    ("col.hostname",  112, "w",      False, "hostname"),
+    ("col.mac",       124, "w",      True,  "mac"),
+    ("col.vendor",    104, "w",      False, "vendor"),
+    ("col.model",     104, "w",      False, "model"),
+    ("col.vpn",        38, "center", False, "vpn"),
+    ("col.ttl",        36, "center", True,  "ttl"),
+    ("col.latency",    50, "center", True,  "latency"),
+    ("col.method",     60, "center", False, "method"),
+    ("col.risk",       44, "center", True,  "risk"),
+    ("col.alerts",     52, "center", False, "alerts"),
+    ("col.ports",     126, "w",      True,  "ports"),
 )
 
 #: Index of the column that renders the coloured status dot.
@@ -1319,7 +1319,12 @@ class IPInspectorApp(ctk.CTk):
         request.resolve_hostnames = True
         request.identify_models = True
         request.advanced_banners = True
-        request.device_hints = ("exposure",)
+        # "IP Camera" is the switch that makes the model phase probe ONVIF and
+        # RTSP, so a sweep that leaves it out reports every camera as an
+        # unidentified host. The hints are read as a membership test, so the
+        # full set costs nothing.
+        request.device_hints = ("IP Camera", "IoT Device", "Printer",
+                                "Router", "exposure")
         request.profile = "full"
         self._clear_devices()
         self._set_scanning(True)

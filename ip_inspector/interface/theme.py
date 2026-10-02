@@ -759,18 +759,43 @@ class ResultTable(ctk.CTkFrame):
 
         for index, spec in enumerate(self._columns):
             label, width, anchor, _mono, _align = spec
-            header.grid_columnconfigure(
-                index, minsize=width,
-                weight=1 if index == len(self._columns) - 1 else 0,
+            # Weight proportional to the column's own width, so the spare room
+            # in a wide window is shared in proportion instead of all landing on
+            # the last column. The declared width stays as the minimum, which
+            # keeps a narrow window from crushing a column below what its
+            # caption needs.
+            header.grid_columnconfigure(index, minsize=width, weight=width)
+            # Each heading lives in a fixed-width holder that refuses to grow. A
+            # button sizes its column to whatever its caption needs, and
+            # "STATUS" needs more than the 20px this column is allowed, so the
+            # header ended up wider than the rows below it and every value sat
+            # to the left of the heading it belonged to.
+            holder = ctk.CTkFrame(
+                header, width=width, height=26, fg_color="transparent",
+                corner_radius=0,
             )
+            holder.grid(row=0, column=index, sticky="ew")
+            holder.grid_propagate(False)
             button = ctk.CTkButton(
-                header, text=label.upper(), width=width - 4, height=26,
+                holder, text=label.upper(), width=width, height=26,
                 corner_radius=3, fg_color="transparent", hover_color=None,
                 text_color=("gray35", "gray62"),
                 font=("Segoe UI", self.HEADER_FONT_SIZE, "bold"), anchor=anchor,
                 command=(lambda i: self._on_sort(i)) if self._on_sort else None,
             )
-            button.grid(row=0, column=index, sticky="ew", padx=1)
+            button.grid(row=0, column=0, sticky="ew")
+
+        # The scrollable body gives 16px to its scrollbar and the header does
+        # not, so the two grids were laid out on different widths and every
+        # column drifted as the window grew. A spacer of the scrollbar's own
+        # width reserves that gutter in the header, so the columns underneath
+        # land exactly where their headings are.
+        self._scrollbar_gutter = ctk.CTkFrame(
+            header, width=0, height=26, fg_color="transparent", corner_radius=0,
+        )
+        self._scrollbar_gutter.grid(
+            row=0, column=len(self._columns), sticky="nsew")
+        header.grid_columnconfigure(len(self._columns), weight=0)
 
         self._body = ctk.CTkScrollableFrame(
             self, fg_color="transparent", corner_radius=0,
@@ -783,15 +808,34 @@ class ResultTable(ctk.CTkFrame):
         # as the header does. Reserving minsizes here instead would squeeze
         # the rows and slide every cell out of place.
         self._body.grid_columnconfigure(0, weight=1)
+        self._sync_gutter()
+        self.bind("<Configure>", self._on_resize)
+
+    def _sync_gutter(self) -> None:
+        """Match the header's gutter to the scrollbar's real width."""
+        scrollbar = getattr(self._body, "_scrollbar", None)
+        if scrollbar is None or self._scrollbar_gutter is None:
+            return
+        try:
+            width = scrollbar.winfo_reqwidth() or 16
+        except Exception:  # noqa: BLE001 - a body not yet built is not fatal
+            return
+        self._scrollbar_gutter.configure(width=width)
+
+    def _on_resize(self, _event=None) -> None:
+        """Keep the header and the body on the same width after a resize."""
+        self._sync_gutter()
 
     # -- styling ---------------------------------------------------------
     def refresh(self) -> None:
         """Re-apply palette colours to header and existing rows."""
         pal = current()
         for index in range(len(self._columns)):
-            self._header.grid_slaves(row=0, column=index)[0].configure(
-                text_color=pal.text_secondary,
-            )
+            # The caption now sits on a button inside a fixed-width holder, so
+            # the widget that carries the colour is one level down.
+            holder = self._header.grid_slaves(row=0, column=index)[0]
+            for button in holder.grid_slaves(row=0, column=0):
+                button.configure(text_color=pal.text_secondary)
         self._restyle_all()
 
     def _restyle_all(self) -> None:
@@ -837,10 +881,13 @@ class ResultTable(ctk.CTkFrame):
             self._body, fg_color="transparent", height=self.ROW_HEIGHT,
             corner_radius=3, border_width=1,
         )
-        row.grid(row=position, column=0, sticky="ew", padx=1, pady=0)
-        # The trailing column absorbs the slack, keeping it flush with the
-        # right edge of the header instead of pushing the first cell wide.
-        row.grid_columnconfigure(len(self._columns) - 1, weight=1)
+        row.grid(row=position, column=0, sticky="ew", pady=0)
+        # Every row reserves exactly the widths the header reserved, with the
+        # same proportional weighting. Without this each row sized its own
+        # columns from its own text, so a long hostname stretched the columns
+        # beside it and every value drifted left of the header it belonged to.
+        for index, spec in enumerate(self._columns):
+            row.grid_columnconfigure(index, minsize=spec[1], weight=spec[1])
         row.grid_propagate(False)
         row.bind("<Button-1>", lambda _e, k=key: self._select(k))
 
@@ -860,16 +907,19 @@ class ResultTable(ctk.CTkFrame):
                     row, width=width - 2, height=self.ROW_HEIGHT - 8,
                     kind=self._icons.get(key, UNKNOWN_ICON_KIND),
                 )
-                widget.grid(row=0, column=index, sticky="w", padx=2)
+                widget.grid(row=0, column=index, sticky="ew", padx=2)
             elif index == self._dot:
                 # Cell widths are the column width minus the padding on both
-                # sides, so a row grid lands exactly on the header grid.
+                # sides, so a row grid lands exactly on the header grid. The
+                # label is centred inside that width: the status dot belongs
+                # under its heading, not against the left edge of the column.
                 widget = ctk.CTkLabel(
                     row, text=value, width=width - 4, height=self.ROW_HEIGHT - 4,
+                    anchor="center",
                     text_color=dot or (pal.online if value else pal.text_secondary),
                     font=("Segoe UI", self.ROW_FONT_SIZE, "bold"),
                 )
-                widget.grid(row=0, column=index, sticky="w", padx=(4, 0))
+                widget.grid(row=0, column=index, sticky="ew", padx=2)
             else:
                 family = "Consolas" if mono else "Segoe UI"
                 # Native Tk labels clip a 12pt face against a 34px row unless
@@ -880,8 +930,14 @@ class ResultTable(ctk.CTkFrame):
                     anchor=anchor, text_color=pal.text_primary,
                     font=(family, self.ROW_FONT_SIZE),
                     padx=self.ROW_FONT_PADDING,
+                    # Without this a long hostname or port list spills over the
+                    # next column instead of ending at its own edge. The value
+                    # is refreshed from the real width on <Configure>, so the
+                    # wrap follows a column that grew with the window.
+                    wraplength=width - 4 - 2 * self.ROW_FONT_PADDING,
                 )
                 widget.grid(row=0, column=index, sticky="ew", padx=2)
+                widget.bind("<Configure>", self._rewrap, add="+")
             widgets.append(widget)
 
         self._rows[key] = (row, widgets, dot)
@@ -892,6 +948,24 @@ class ResultTable(ctk.CTkFrame):
         else:
             self._order.insert(position, key)
         self._style_row(row, position, key == self._selected)
+
+    @staticmethod
+    def _rewrap(event) -> None:
+        """Keep a cell's wrap length on its real width.
+
+        Columns now grow with the window, so a wrap length fixed at build time
+        would let a long value wrap far too early and leave the rest of a
+        widened column empty.
+        """
+        widget = event.widget
+        real = widget.winfo_width()
+        if real > 8:
+            try:
+                widget.configure(
+                    wraplength=max(8, real - 2 * ResultTable.ROW_FONT_PADDING)
+                )
+            except Exception:  # noqa: BLE001 - a dead cell is not fatal
+                pass
 
     def has_key(self, key: str) -> bool:
         """True when a row for ``key`` already exists in the table."""
