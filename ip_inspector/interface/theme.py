@@ -880,6 +880,10 @@ class ResultTable(ctk.CTkFrame):
                     anchor=anchor, text_color=pal.text_primary,
                     font=(family, self.ROW_FONT_SIZE),
                     padx=self.ROW_FONT_PADDING,
+                    # Without this a long hostname or port list spills over the
+                    # next column instead of ending at its own edge, which is
+                    # what made the grid look broken on narrow windows.
+                    wraplength=width - 4 - 2 * self.ROW_FONT_PADDING,
                 )
                 widget.grid(row=0, column=index, sticky="ew", padx=2)
             widgets.append(widget)

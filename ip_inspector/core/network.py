@@ -293,6 +293,13 @@ class NetworkScanner:
 
         Only the selected adapter is consulted, so a target range that
         belongs to another NIC never turns into a broadcast on this one.
+
+        A VPN is allowed through even when it is not RFC 1918. Corporate VPNs
+        routinely hand out public-looking space (100.64/10 carrier-grade NAT
+        and outright public /24s are both common), and dropping those meant the
+        sweep ARPed nothing and fell back to probing addresses the tunnel was
+        never going to answer. The adapter being ours is the real
+        justification, not the address range.
         """
         local = [
             ipaddress.ip_network(f"{ip}/{mask}", strict=False)
@@ -305,8 +312,12 @@ class NetworkScanner:
             except ValueError:
                 continue
             for network in local:
-                if address in network and network.is_private:
-                    selected.add(ipaddress.ip_network(f"{address}/24", strict=False))
+                # The broadcast prefix follows the adapter's own netmask
+                # instead of being forced to a /24: a VPN may hand out a /30,
+                # and a /24 would ARP 250 addresses the tunnel does not route.
+                if address in network:
+                    selected.add(ipaddress.ip_network(
+                        f"{address}/{network.prefixlen}", strict=False))
                     break
         return sorted(selected)
 
