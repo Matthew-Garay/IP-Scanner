@@ -759,10 +759,12 @@ class ResultTable(ctk.CTkFrame):
 
         for index, spec in enumerate(self._columns):
             label, width, anchor, _mono, _align = spec
-            header.grid_columnconfigure(
-                index, minsize=width,
-                weight=1 if index == len(self._columns) - 1 else 0,
-            )
+            # Weight proportional to the column's own width, so the spare room
+            # in a wide window is shared in proportion instead of all landing on
+            # the last column. The declared width stays as the minimum, which
+            # keeps a narrow window from crushing a column below what its
+            # caption needs.
+            header.grid_columnconfigure(index, minsize=width, weight=width)
             # Each heading lives in a fixed-width holder that refuses to grow. A
             # button sizes its column to whatever its caption needs, and
             # "STATUS" needs more than the 20px this column is allowed, so the
@@ -783,6 +785,18 @@ class ResultTable(ctk.CTkFrame):
             )
             button.grid(row=0, column=0, sticky="ew")
 
+        # The scrollable body gives 16px to its scrollbar and the header does
+        # not, so the two grids were laid out on different widths and every
+        # column drifted as the window grew. A spacer of the scrollbar's own
+        # width reserves that gutter in the header, so the columns underneath
+        # land exactly where their headings are.
+        self._scrollbar_gutter = ctk.CTkFrame(
+            header, width=0, height=26, fg_color="transparent", corner_radius=0,
+        )
+        self._scrollbar_gutter.grid(
+            row=0, column=len(self._columns), sticky="nsew")
+        header.grid_columnconfigure(len(self._columns), weight=0)
+
         self._body = ctk.CTkScrollableFrame(
             self, fg_color="transparent", corner_radius=0,
             scrollbar_button_color=("gray70", "gray35"),
@@ -794,6 +808,23 @@ class ResultTable(ctk.CTkFrame):
         # as the header does. Reserving minsizes here instead would squeeze
         # the rows and slide every cell out of place.
         self._body.grid_columnconfigure(0, weight=1)
+        self._sync_gutter()
+        self.bind("<Configure>", self._on_resize)
+
+    def _sync_gutter(self) -> None:
+        """Match the header's gutter to the scrollbar's real width."""
+        scrollbar = getattr(self._body, "_scrollbar", None)
+        if scrollbar is None or self._scrollbar_gutter is None:
+            return
+        try:
+            width = scrollbar.winfo_reqwidth() or 16
+        except Exception:  # noqa: BLE001 - a body not yet built is not fatal
+            return
+        self._scrollbar_gutter.configure(width=width)
+
+    def _on_resize(self, _event=None) -> None:
+        """Keep the header and the body on the same width after a resize."""
+        self._sync_gutter()
 
     # -- styling ---------------------------------------------------------
     def refresh(self) -> None:
@@ -851,16 +882,12 @@ class ResultTable(ctk.CTkFrame):
             corner_radius=3, border_width=1,
         )
         row.grid(row=position, column=0, sticky="ew", pady=0)
-        # Every row reserves exactly the widths the header reserved, and the
-        # trailing column absorbs the slack in both. Without this each row
-        # sized its own columns from its own text, so a long hostname stretched
-        # the columns beside it and every value drifted left of the header it
-        # belonged to -- the grid looked misaligned rather than merely ragged.
-        last = len(self._columns) - 1
+        # Every row reserves exactly the widths the header reserved, with the
+        # same proportional weighting. Without this each row sized its own
+        # columns from its own text, so a long hostname stretched the columns
+        # beside it and every value drifted left of the header it belonged to.
         for index, spec in enumerate(self._columns):
-            row.grid_columnconfigure(
-                index, minsize=spec[1], weight=1 if index == last else 0
-            )
+            row.grid_columnconfigure(index, minsize=spec[1], weight=spec[1])
         row.grid_propagate(False)
         row.bind("<Button-1>", lambda _e, k=key: self._select(k))
 
@@ -904,11 +931,13 @@ class ResultTable(ctk.CTkFrame):
                     font=(family, self.ROW_FONT_SIZE),
                     padx=self.ROW_FONT_PADDING,
                     # Without this a long hostname or port list spills over the
-                    # next column instead of ending at its own edge, which is
-                    # what made the grid look broken on narrow windows.
+                    # next column instead of ending at its own edge. The value
+                    # is refreshed from the real width on <Configure>, so the
+                    # wrap follows a column that grew with the window.
                     wraplength=width - 4 - 2 * self.ROW_FONT_PADDING,
                 )
                 widget.grid(row=0, column=index, sticky="ew", padx=2)
+                widget.bind("<Configure>", self._rewrap, add="+")
             widgets.append(widget)
 
         self._rows[key] = (row, widgets, dot)
@@ -919,6 +948,24 @@ class ResultTable(ctk.CTkFrame):
         else:
             self._order.insert(position, key)
         self._style_row(row, position, key == self._selected)
+
+    @staticmethod
+    def _rewrap(event) -> None:
+        """Keep a cell's wrap length on its real width.
+
+        Columns now grow with the window, so a wrap length fixed at build time
+        would let a long value wrap far too early and leave the rest of a
+        widened column empty.
+        """
+        widget = event.widget
+        real = widget.winfo_width()
+        if real > 8:
+            try:
+                widget.configure(
+                    wraplength=max(8, real - 2 * ResultTable.ROW_FONT_PADDING)
+                )
+            except Exception:  # noqa: BLE001 - a dead cell is not fatal
+                pass
 
     def has_key(self, key: str) -> bool:
         """True when a row for ``key`` already exists in the table."""
