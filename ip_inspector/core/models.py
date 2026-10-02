@@ -453,10 +453,10 @@ SEVERITY_LABELS: dict[str, str] = {
     "info": "INFO",
 }
 
-#: Glyph per device class, shown in the Type column so a hundred rows can be
-#: read at a glance instead of one word at a time. They are plain geometric
-#: shapes from the BMP on purpose: they render in every font Tk can reach,
-#: while colour emoji are drawn as empty boxes on most Windows installs.
+#: Text fallback per device class, kept for the reports and the exporters,
+#: which write plain text and cannot carry a drawing. The table draws real
+#: pictograms instead (see :mod:`ip_inspector.interface.theme`), because these
+#: glyphs are so alike that a desktop, a server and a switch read the same.
 DEVICE_TYPE_ICONS: dict[str, str] = {
     "Router": "◈",            # diamond: the thing everything routes through
     "Network Device": "⬢",    # hexagon: switch, AP, bridge

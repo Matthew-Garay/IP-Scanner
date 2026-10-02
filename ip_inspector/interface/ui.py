@@ -57,7 +57,6 @@ from ..core.models import (
     TlsReport,
     ToolResult,
     TracerouteHop,
-    device_type_icon,
     latency_stats,
 )
 from ..core.network import NetworkScanner
@@ -129,7 +128,8 @@ TAB_NAME_WIDTH = 16
 DEVICE_COLUMNS: tuple[tuple[str, int, str, bool, str], ...] = (
     ("col.ip",        128, "w",      True,  "ip"),
     ("col.status",     22, "center", False, "status"),
-    ("col.type",      150, "w",      False, "type"),
+    ("col.icon",       26, "center", False, "type"),
+    ("col.type",      128, "w",      False, "type"),
     ("col.hostname",  170, "w",      False, "hostname"),
     ("col.mac",       148, "w",      True,  "mac"),
     ("col.vendor",    168, "w",      False, "vendor"),
@@ -145,6 +145,10 @@ DEVICE_COLUMNS: tuple[tuple[str, int, str, bool, str], ...] = (
 
 #: Index of the column that renders the coloured status dot.
 STATUS_DOT_COLUMN = 1
+
+#: Index of the column that renders the device-type pictogram. The icon leads
+#: the label beside it so a row is recognisable before it is read.
+TYPE_ICON_COLUMN = 2
 
 #: Index of the column that renders the device-type icon. The icon leads the
 #: row on purpose: a page of hosts is scanned by shape long before it is read
@@ -365,6 +369,11 @@ class IPInspectorApp(ctk.CTk):
         #: Last cell contents per row key, so the throttled renderer can
         #: detect changes without asking the widgets (cget is slow).
         self._row_cache: dict[str, list[str]] = {}
+        #: Maps each known device address to the pictogram its row should draw.
+        #: Kept beside the devices because a row can change class as the scan
+        #: enriches it (a bare host becomes a camera once ONVIF answers).
+        self._icon_kinds: dict[str, str] = {}
+
         #: Addresses that have arrived since the last paint. The renderer
         #: walks this instead of the whole table, so the cost of a repaint
         #: tracks what changed rather than how much has been found.
@@ -671,7 +680,9 @@ class IPInspectorApp(ctk.CTk):
             holder,
             tuple((i18n.t(k), w, a, m, s) for k, w, a, m, s in DEVICE_COLUMNS),
             on_sort=self._on_sort,
-            dot=1,
+            dot=STATUS_DOT_COLUMN,
+            icon=TYPE_ICON_COLUMN,
+            icons=self._icon_kinds,
         )
         self._table.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
         self._table.bind_context_menu(self._on_context_menu)
@@ -961,8 +972,11 @@ class IPInspectorApp(ctk.CTk):
         return [
             device.ip_address,
             "\u25CF" if device.is_alive else "\u25CB",
-            f"{device_type_icon(device.device_type)}  "
-            + i18n.device_type_label(device.device_type),
+            # The pictogram itself is drawn by the table from the device type;
+            # this cell only carries the type so the header and the export can
+            # read it, and the icon column renders beside it.
+            device.device_type,
+            i18n.device_type_label(device.device_type),
             device.hostname or "-",
             device.mac_address or "-",
             device.vendor or i18n.t("value.unknown.vendor"),
@@ -1017,6 +1031,12 @@ class IPInspectorApp(ctk.CTk):
         self._dirty.clear()
 
         devices = self._visible_devices()
+        # Updated in place: the table holds a reference to this exact dict, so
+        # rebinding it here would leave every row drawing the fallback shape.
+        self._icon_kinds.clear()
+        self._icon_kinds.update(
+            {d.ip_address: theme.icon_kind(d.device_type) for d in devices}
+        )
         self._table.rebuild(
             [(d.ip_address, self._row_values(d), self._state_tags(d)) for d in devices]
         )
@@ -1097,6 +1117,9 @@ class IPInspectorApp(ctk.CTk):
                 continue
             cells = self._row_values(device)
             dot = self._state_tags(device)
+            # The pictogram is keyed by row, so the table needs to be told which
+            # shape this address draws before the row is created or updated.
+            self._icon_kinds[key] = theme.icon_kind(device.device_type)
             if self._table.has_key(key):
                 if self._row_cache.get(key) != cells:
                     self._table.update_row(key, cells, dot)
@@ -1356,6 +1379,7 @@ class IPInspectorApp(ctk.CTk):
         # finished painting.
         self._dirty.clear()
         self._pending_rows.clear()
+        self._icon_kinds.clear()
         if self._paint_job is not None:
             try:
                 self.after_cancel(self._paint_job)

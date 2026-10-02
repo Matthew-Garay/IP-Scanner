@@ -1,0 +1,25 @@
+Dibuja pictogramas reales de tipo de dispositivo en la tabla
+
+La columna Tipo usaba glifos geometricos del BMP: un cuadrado relleno para
+cualquier escritorio y uno rayado para cualquier servidor. Windows, Mac y
+Apple compartian marca, igual que Linux Server y Server, de modo que el icono
+no aportaba nada sobre lo que la etiqueta ya decia al lado.
+
+Ahora hay una columna propia que dibuja la forma en un canvas: enrutador con
+flecha de trafico, switch con puertos y luz, camara con lente, impresora con
+hoja saliendo, monitor con pie, rack con luces, placa con pines, movil con
+boton, y un recuadro discontinuo para lo no clasificado. Se dibujan en vez de
+escribirse, asi que no dependen de las fuentes instaladas, igual que ya hacia
+el sparkline.
+
+El texto de Tipo queda como solo etiqueta y el glifo antiguo se retira de ahi.
+
+Tres fallos aparecieron al implementarlo y quedaron cubiertos: el canvas se
+quedaba a un pixel y no dibujaba nada hasta que la ventana se reorganizaba; el
+mapa de iconos se reasignaba en cada repintado y dejaba huerfana la referencia
+de la tabla; y "icons or {}" descartaba el diccionario real porque uno vacio es
+falsy, dejando todas las filas con el icono de desconocido.
+
+Verificado con 63 comprobaciones, incluidas las formas distintas entre si y el
+cambio de pictograma cuando la fila reclasifica, mas un escaneo real que
+clasifica 127.0.0.1 como Windows PC y dibuja el monitor.
