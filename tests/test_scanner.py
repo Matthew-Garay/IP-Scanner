@@ -21,22 +21,41 @@ class PortScanConcurrency(unittest.TestCase):
     El escaner creaba una tarea por host y cada una recorria sus puertos en
     serie. Un solo worker solo puede sostener un permiso del semaforo, asi que
     la concurrencia era decorativa: un host gastaba un timeout completo por
-    puerto cerrado. Con 1024 puertos eran ~20 minutos por maquina; ahora ~6 s.
+    puerto cerrado. Con 1024 puertos eran ~20 minutos por maquina.
+
+    La segunda version usaba asyncio con una tarea por par, lo que duplicaba el
+    tiempo: ``connect`` libera el GIL, asi que un pool de hilos rinde el doble
+    que el bucle de eventos para esta carga. Medido aqui: 481 sondas/s con
+    asyncio frente a 4485 con hilos.
     """
 
-    def test_una_tarea_por_par_host_puerto(self):
-        fuente = inspect.getsource(
-            NetworkScanner._scan_ports_concurrently)
+    def test_una_sonda_por_par_host_puerto(self):
+        fuente = inspect.getsource(NetworkScanner._scan_ports_threaded)
         # La forma que hacia todo en serie era iterar puertos DENTRO de un
-        # worker por host; ahora la iteracion construye una tarea por par.
+        # worker por host; ahora la iteracion encola un par por trabajo.
         self.assertIn("for port in request.ports", fuente)
         self.assertNotIn("for port_number in request.ports", fuente)
 
+    def test_usa_hilos_y_no_asyncio(self):
+        fuente = inspect.getsource(NetworkScanner._scan_ports_threaded)
+        self.assertIn("ThreadPoolExecutor", fuente)
+        self.assertNotIn("asyncio", fuente)
+
     def test_el_progreso_no_inunda_la_cola(self):
         """Un evento por puerto inundaria la cola que consume la interfaz."""
-        fuente = inspect.getsource(
-            NetworkScanner._scan_ports_concurrently)
+        fuente = inspect.getsource(NetworkScanner._scan_ports_threaded)
         self.assertIn("completed % 100", fuente)
+
+    def test_el_tope_no_supera_las_sondas_reales(self):
+        """Abrir 2000 hilos para 300 sondas desperdicia memoria sin ganar nada."""
+        fuente = inspect.getsource(NetworkScanner._scan_ports_threaded)
+        self.assertIn("min(request.concurrency, total)", fuente)
+
+    def test_los_valores_por_defecto_son_los_rapidos(self):
+        """Regresion: 1.0s y 500 sondas eran la configuracion lenta."""
+        request = ScanRequest(target_range="10.0.0.0/24")
+        self.assertLessEqual(request.port_timeout, 0.5)
+        self.assertGreaterEqual(request.concurrency, 2000)
 
 
 class ScanPorts(unittest.TestCase):
