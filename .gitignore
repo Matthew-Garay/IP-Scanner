@@ -26,6 +26,8 @@ salida/
 *.tmp
 *.bak
 *.old
+_tests.txt
+_rd.txt
 
 # Datos locales del operador
 *.db
