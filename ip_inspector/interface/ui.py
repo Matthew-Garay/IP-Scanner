@@ -606,7 +606,7 @@ class IPInspectorApp(ctk.CTk):
             return
         self._set_range(local_network_hint(self._interface_name))
         self._set_phase(i18n.t("iface.selected", name=adapter.name,
-                               network=adapter.network or adapter.address))
+                               network=adapter.sweep_range or adapter.address))
 
     def _build_tabs(self) -> None:
         # Dashboard sits on row 1, tabs on row 2; only the tabs stretch.

@@ -46,6 +46,7 @@ from .models import (
 )
 from .ping import ping_ttl
 from .utils import (
+    MAX_TARGETS,
     is_elevated,
     is_ip_in_virtual_subnet,
     iter_local_ipv4,
@@ -312,12 +313,19 @@ class NetworkScanner:
             except ValueError:
                 continue
             for network in local:
-                # The broadcast prefix follows the adapter's own netmask
-                # instead of being forced to a /24: a VPN may hand out a /30,
-                # and a /24 would ARP 250 addresses the tunnel does not route.
+                # The broadcast prefix follows the adapter's own netmask,
+                # narrowed until it fits a sweep: a VPN advertising a /8 would
+                # otherwise have the scanner aim a sixteen-million-address
+                # broadcast at a tunnel that routes almost none of it.
                 if address in network:
-                    selected.add(ipaddress.ip_network(
-                        f"{address}/{network.prefixlen}", strict=False))
+                    prefix = network.prefixlen
+                    while prefix < 32:
+                        candidate = ipaddress.ip_network(
+                            f"{network.network_address}/{prefix}", strict=False)
+                        prefix += 1
+                        if candidate.num_addresses <= MAX_TARGETS:
+                            break
+                    selected.add(candidate)
                     break
         return sorted(selected)
 

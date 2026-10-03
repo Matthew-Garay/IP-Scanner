@@ -23,7 +23,11 @@ import urllib.error
 import urllib.request
 
 #: Ports worth probing for a device identity.
-IDENTITY_PORTS = (80, 8080, 443, 8000)
+#: The first four are the overwhelming majority of web interfaces; the rest are
+#: the alternate ports real hardware ships on. A single list used to stop at
+#: 8000, so a printer on 9100-adjacent admin ports, a NAS on 8443 or an NVR on
+#: 8081 was reported with no model at all even though it was reachable.
+IDENTITY_PORTS = (80, 8080, 443, 8000, 8443, 8081, 81, 8008, 8888, 9090, 5000)
 
 #: Paths to try on the web interface; many devices answer on a sub-path.
 IDENTITY_PATHS = ("/", "/index.html", "/login.html", "/status", "/Info")
