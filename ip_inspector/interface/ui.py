@@ -384,6 +384,13 @@ class IPInspectorApp(ctk.CTk):
         self._sections: list[ctk.CTkBaseClass] = []
 
         self.grid_columnconfigure(0, weight=1)
+        # Four bands, and only the tab strip flexes: header, tabs, status strip
+        # and footer are fixed-height chrome, so the table takes every pixel
+        # that is left over. The window is a work surface, not a document.
+        self.grid_rowconfigure(0, weight=0)
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(2, weight=0)
+        self.grid_rowconfigure(3, weight=0)
 
         self._bind_shortcuts()
         self._build_header()
@@ -609,7 +616,8 @@ class IPInspectorApp(ctk.CTk):
                                network=adapter.sweep_range or adapter.address))
 
     def _build_tabs(self) -> None:
-        # Dashboard sits on row 1, tabs on row 2; only the tabs stretch.
+        # The tab strip sits on row 1 and takes the whole flexible band, so the
+        # table below it is the only thing that grows.
         self.grid_rowconfigure(1, weight=1)
         self._tabs = ctk.CTkTabview(self)
         self._tabs.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 6))
@@ -618,6 +626,78 @@ class IPInspectorApp(ctk.CTk):
             self._tabs.add(i18n.t(key))
         for key in TAB_KEYS:
             self._build_tabs_one(key)
+        self._style_tab_strip()
+
+    def _style_tab_strip(self) -> None:
+        """
+        Make the tab strip recede, and reveal it on hover.
+
+        Scanning is the job, so the five secondary destinations must not
+        compete with it for attention. The strip keeps its place in the
+        layout -- nothing reflows when it fades -- and returns the moment the
+        pointer comes near it, so nothing is lost to a user who wants it.
+        """
+        palette = theme.current()
+        self._tabs.configure(
+            segmented_button_fg_color=palette.surface,
+            segmented_button_selected_color=palette.selection,
+            segmented_button_selected_hover_color=palette.selection,
+            segmented_button_unselected_color=palette.surface,
+            segmented_button_unselected_hover_color=palette.hover,
+            text_color=palette.text_primary,
+            corner_radius=4,
+        )
+        # The text colours of the strip live on its own segmented button, which
+        # does not expose them as tabview options, so they are set on the
+        # buttons themselves. Muted while idle, full contrast on hover.
+        self._tab_buttons = dict(
+            self._tabs._segmented_button._buttons_dict
+        )
+        strip = self._tabs._segmented_button
+        for button in self._tab_buttons.values():
+            button.configure(
+                text_color=palette.text_muted,
+                font=ctk.CTkFont(size=10, weight="bold"),
+            )
+        # The strip's own wrapper does not implement bind() on this version of
+        # customtkinter, so the hover is wired to the underlying tk canvas,
+        # which does. A failure here is cosmetic and must not stop the window.
+        for holder in (getattr(strip, "_parent_canvas", None),
+                       getattr(strip, "_canvas", None),
+                       getattr(strip, "_parent_frame", None)):
+            if holder is None:
+                continue
+            try:
+                holder.bind("<Enter>", self._reveal_tabs, add="+")
+                holder.bind("<Leave>", self._conceal_tabs, add="+")
+                break
+            except Exception:  # noqa: BLE001 - try the next candidate
+                continue
+        self._conceal_tabs()
+
+    def _set_tab_text_colour(self, colour: str) -> None:
+        """Tint the idle tab captions, keeping the selected one highlighted."""
+        selected = None
+        try:
+            selected = self._tabs.get()
+        except Exception:  # noqa: BLE001 - nothing selected yet
+            pass
+        for name, button in self._tab_buttons.items():
+            try:
+                button.configure(
+                    text_color=theme.current().primary
+                    if name == selected else colour
+                )
+            except Exception:  # noqa: BLE001 - a dead widget is not fatal
+                pass
+
+    def _reveal_tabs(self, _event=None) -> str:
+        self._set_tab_text_colour(theme.current().text_primary)
+        return "break"
+
+    def _conceal_tabs(self, _event=None) -> str:
+        self._set_tab_text_colour(theme.current().text_muted)
+        return "break"
 
     def _build_tabs_one(self, key: str) -> None:
         """Build one tab, named by its catalogue key rather than its label."""
@@ -1188,6 +1268,14 @@ class IPInspectorApp(ctk.CTk):
             text=i18n.t("status.matching", shown=count, total=total)
             if self._filter.strip() and total else ""
         )
+        # The device counter is the number the operator watches, so it lives in
+        # the status strip and updates on every repaint rather than only when
+        # a scan finishes.
+        counter = getattr(self, "_counter_label", None)
+        if counter is not None:
+            counter.configure(
+                text=i18n.t("status.found", count=total) if total else ""
+            )
 
     def _score_devices(self) -> None:
         """
@@ -1446,14 +1534,25 @@ class IPInspectorApp(ctk.CTk):
             self._render_table(force=True)
 
     def _render_progress(self, event: ScannerEvent) -> None:
-        """Move the progress bar and the phase caption."""
+        """Move the progress bar, the phase caption and the live counters."""
         if event.total > 0:
-            self._progress.set(min(1.0, event.completed / event.total))
+            fraction = min(1.0, event.completed / event.total)
+            self._progress_set(fraction)
             self._set_phase(
-                f"{i18n.t('phase.' + event.phase.lower())}   {i18n.translate_line(event.message)}"
+                f"{i18n.t('phase.' + event.phase.lower())}   "
+                f"{i18n.translate_line(event.message)}"
+            )
+            # "45% · 110 of 254" answers both questions the operator has while
+            # a sweep runs: is it moving, and how much is left.
+            self._counter_label.configure(
+                text=i18n.t("status.progress", percent=int(fraction * 100),
+                            done=event.completed, total=event.total)
             )
         else:
-            self._set_phase(f"{i18n.t('phase.' + event.phase.lower())}   {i18n.translate_line(event.message)}".rstrip())
+            self._set_phase(
+                f"{i18n.t('phase.' + event.phase.lower())}   "
+                f"{i18n.translate_line(event.message)}".rstrip()
+            )
 
     def _set_phase(self, text: str) -> None:
         self._phase_label.configure(text=text)
@@ -2994,29 +3093,58 @@ class IPInspectorApp(ctk.CTk):
     # Status bar, footer and lifecycle
     # ------------------------------------------------------------------
     def _build_status_bar(self) -> None:
-        bar = ctk.CTkFrame(self, fg_color="transparent")
-        bar.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 0))
-        bar.grid_columnconfigure(1, weight=1)
+        """
+        The status strip pinned to the bottom of the window.
 
-        self._progress = theme.progress_bar(bar, width=320, height=6)
-        self._progress.set(0)
-        self._progress.grid(row=0, column=0, padx=(0, 12), sticky="w")
+        Progress is reported the way a transfer dialog reports it: how far
+        along, and how many of how many. A bar with no numbers leaves the
+        operator guessing whether a slow sweep is stuck or merely thorough.
+        """
+        bar = ctk.CTkFrame(
+            self, fg_color=theme.current().surface, corner_radius=0)
+        bar.grid(row=3, column=0, sticky="ew", pady=(0, 0))
+        bar.grid_columnconfigure(1, weight=1)
+        # A 2px rule along the top edge: the strip reads as part of the window
+        # rather than as a panel dropped below the table.
+        rule = ctk.CTkFrame(bar, fg_color=theme.current().grid_line,
+                            height=1, corner_radius=0)
+        rule.grid(row=0, column=0, columnspan=3, sticky="ew")
+
+        self._progress, self._progress_set = theme.progress_bar(
+            bar, width=1, height=2)
+        self._progress.grid(row=1, column=0, columnspan=3, sticky="ew")
+
+        inner = ctk.CTkFrame(bar, fg_color="transparent")
+        inner.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(5, 5),
+                   padx=16)
+        inner.grid_columnconfigure(1, weight=1)
+        # The signature is built into this strip rather than into a row of its
+        # own, so the window ends in one fixed band instead of two that fight
+        # over the same grid row.
+        self._status_inner = inner
 
         self._phase_label = ctk.CTkLabel(
-            bar, text=i18n.t("status.ready"), anchor="w",
-            font=ctk.CTkFont(size=12),
+            inner, text=i18n.t("status.ready"), anchor="w",
+            font=ctk.CTkFont(size=10),
             text_color=theme.current().text_secondary,
         )
-        self._phase_label.grid(row=0, column=1, sticky="w")
+        self._phase_label.grid(row=0, column=0, sticky="w")
+
+        # Live count of what has been found, the number an operator watches.
+        self._counter_label = ctk.CTkLabel(
+            inner, text="", anchor="e", font=ctk.CTkFont(size=10),
+            text_color=theme.current().text_secondary,
+        )
+        self._counter_label.grid(row=0, column=2, sticky="e")
 
         # The detected segment stays on screen: it is the answer to "why is
         # it scanning this range", and it survives every status message.
         self._net_label = ctk.CTkLabel(
             bar, text=self._network_caption(), anchor="e",
-            font=ctk.CTkFont(size=11),
-            text_color=theme.current().text_secondary,
+            font=ctk.CTkFont(size=10),
+            text_color=theme.current().text_muted,
         )
-        self._net_label.grid(row=0, column=2, sticky="e", padx=(12, 2))
+        self._net_label.grid(row=0, column=3, sticky="e", padx=(0, 0))
         self._sections.append(bar)
 
     def _network_caption(self) -> str:
@@ -3033,14 +3161,28 @@ class IPInspectorApp(ctk.CTk):
             label.configure(text=self._network_caption())
 
     def _build_footer(self) -> None:
-        """Signature pinned to the bottom-right corner of the window."""
-        footer = ctk.CTkFrame(self, fg_color="transparent")
-        footer.grid(row=3, column=0, sticky="sew", padx=20, pady=(0, 8))
-        footer.grid_columnconfigure(0, weight=1)
+        """
+        The signature, which now lives inside the status strip.
+
+        It used to be a row of its own below the status bar, which meant the
+        two competed for the same grid row and the bar was pushed off the
+        bottom edge. The strip is the natural home for it: one fixed band, and
+        the table keeps every pixel that is left.
+        """
+        footer = getattr(self, "_status_inner", None)
+        if footer is None:
+            # Only during a language rebuild, before the strip exists again.
+            ctk.CTkLabel(
+                self, text=f"{APP_NAME}   ·   by {APP_AUTHOR}",
+                font=ctk.CTkFont(size=9), anchor="e",
+                text_color=theme.current().text_muted,
+            ).grid(row=2, column=0, sticky="se", padx=20)
+            return
         ctk.CTkLabel(
             footer, text=f"{APP_NAME}   ·   by {APP_AUTHOR}",
-            font=ctk.CTkFont(size=11), anchor="e",
-        ).grid(row=0, column=1, sticky="se", padx=(0, 2))
+            font=ctk.CTkFont(size=9), anchor="e",
+            text_color=theme.current().text_muted,
+        ).grid(row=1, column=2, sticky="e", padx=(12, 0))
 
     # ------------------------------------------------------------------
     # Language switching
