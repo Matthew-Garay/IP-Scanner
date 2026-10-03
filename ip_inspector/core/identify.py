@@ -437,27 +437,29 @@ def probe_rtsp_banner(ip: str, port: int = 554, timeout: float = 1.5) -> str:
     return "RTSP" if data.upper().startswith("RTSP") else ""
 
 
-def identify_camera(ip: str, open_ports: list[int]) -> tuple[str, str]:
+def identify_camera(ip: str, open_ports: list[int]) -> tuple[str, str, bool]:
     """
     Identify a camera or NVR.
 
-    Returns ``(model, vendor)`` using ONVIF/UPnP first, then the RTSP
-    banner, then the web title.
+    Returns ``(model, vendor, is_camera)``. The flag is what lets the scanner
+    reclassify the host: ONVIF, UPnP and an RTSP banner are proof of a camera,
+    and that evidence has to reach ``device_type`` or the row keeps showing the
+    unknown pictogram even with the model filled in.
     """
     for port in open_ports:
         if port in (80, 81, 8000, 8080, 443, 37777, 8899, 34567):
             info = probe_device_description(ip, port)
             if info.get("model") or info.get("vendor"):
-                return info.get("model", ""), info.get("vendor", "")
+                return info.get("model", ""), info.get("vendor", ""), True
 
     if 554 in open_ports:
         banner = probe_rtsp_banner(ip)
         if banner:
-            return banner, ""
+            return banner, "", True
 
     for port in open_ports:
         if port in (80, 8000, 8080, 443):
             _server, title = probe_http_identity(ip, port)
             if title:
-                return title, ""
-    return "", ""
+                return title, "", True
+    return "", "", False

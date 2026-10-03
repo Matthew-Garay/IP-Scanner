@@ -161,6 +161,12 @@ class NetworkScanner:
         # Model identification runs last: it needs the final open-port set.
         if request.identify_models and not self.is_stopping:
             self._identify_models(devices, request)
+            # Identification often turns up a vendor or a model the first pass
+            # never saw, and _classify reads both. Without this second pass a
+            # host stays in whatever class its bare ports suggested, which is
+            # why the pictogram looked wrong on hardware it had just named.
+            if not self.is_stopping:
+                self._classify_all(devices)
 
         for device in devices:
             self._emit(ScannerEvent("Device", device=device))
@@ -493,11 +499,17 @@ class NetworkScanner:
         def identify(device: Device) -> None:
             open_ports = [p.number for p in device.open_ports if p.is_open]
             if "IP Camera" in request.device_hints:
-                model, vendor = identify_camera(device.ip_address, open_ports)
+                model, vendor, is_camera = identify_camera(
+                    device.ip_address, open_ports)
                 if model:
                     device.model = model
                 if vendor and not device.vendor:
                     device.vendor = vendor
+                # The evidence has to be applied here: classification already
+                # ran, before a single model was known. Without this a camera
+                # answered ONVIF keeps the unknown pictogram.
+                if is_camera:
+                    device.device_type = "IP Camera"
             if not device.model:
                 device.model = identify_model(
                     device.ip_address,

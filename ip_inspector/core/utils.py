@@ -100,14 +100,29 @@ class NetworkAdapter:
 
     @property
     def sweep_range(self) -> str:
-        """The range to sweep for this adapter, clamped to a sweepable size."""
+        """
+        The range to sweep for this adapter, clamped to a sweepable size.
+
+        A mesh VPN advertises a mask wide enough to cover the whole address
+        space (Radmin hands out /8, i.e. 26.0.0.0/8). Narrowing that from the
+        top yields 26.0.0.0/17, which is 32768 addresses almost none of them
+        peers: mesh clients are handed addresses from the same /24 as the local
+        one. So for a virtual adapter the range is built around its own
+        address, which is where the rest of the mesh actually lives.
+        """
         if not self.network or not self.is_scannable:
             return ""
         try:
-            return clamp_to_sweep(
-                ipaddress.ip_network(self.network, strict=False))
+            network = ipaddress.ip_network(self.network, strict=False)
         except ValueError:
             return ""
+        if self.is_virtual and network.num_addresses > 1024:
+            try:
+                address = ipaddress.ip_address(self.address or "0.0.0.0")
+            except ValueError:
+                return clamp_to_sweep(network)
+            return str(ipaddress.ip_network(f"{address}/24", strict=False))
+        return clamp_to_sweep(network)
 
     @property
     def is_loopback(self) -> bool:
