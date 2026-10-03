@@ -218,6 +218,13 @@ class NetworkScanner:
         pending = [ip for ip in targets if ip not in arp_table]
         reachable = self._probe_reachability(pending, request.port_timeout, request.concurrency)
 
+        # Probing a host is what makes the operating system resolve its address
+        # to a MAC, and that resolution lands in the neighbour table *after* the
+        # snapshot taken above. Without this pass every device this sweep was the
+        # first to contact -- precisely the ones showing up blank -- kept a null
+        # MAC even though the system now knew it.
+        self._absorb_arp_after_probe(arp_table, reachable)
+
         devices: list[Device] = []
         for ip in targets:
             mac = arp_table.get(ip)
@@ -238,6 +245,43 @@ class NetworkScanner:
         # so the fingerprint still has something to work with.
         self._fill_missing_ttls(devices, min(request.port_timeout, 1.0))
         return devices
+
+    def _absorb_arp_after_probe(
+        self,
+        arp_table: dict[str, str],
+        reachable: dict[str, tuple[float, int | None]],
+    ) -> None:
+        """
+        Fill in the MAC addresses the probe itself taught the system.
+
+        The ARP snapshot is taken before the reachability probe, but probing a
+        host is exactly what makes the operating system resolve its address to
+        a MAC. Those resolutions land in the neighbour table *after* the
+        snapshot, so the addresses this sweep was the first to learn about --
+        precisely the ones rendering with a blank MAC column -- were discarded.
+        Re-reading the table here is the only way they reach the device list.
+
+        Only reachable hosts are looked up, and the table is read once: calling
+        ``read_arp_cache`` per address would re-enumerate every interface for
+        every host and turn one pass into two hundred.
+        """
+        missing = [ip for ip in reachable if ip not in arp_table]
+        if not missing:
+            return
+        # With layer 2 available the sweep already answered for everyone; a
+        # missing entry is a host that simply did not reply, and re-reading the
+        # table would not change that.
+        if is_elevated() and supports_layer2():
+            return
+        try:
+            cache = read_arp_cache()
+        except Exception:  # noqa: BLE001 - never fail a scan over enrichment
+            logger.debug("Could not re-read the ARP table", exc_info=True)
+            return
+        for ip in missing:
+            mac = cache.get(ip)
+            if mac:
+                arp_table[ip] = mac
 
     def _arp_sweep(self, targets: list[str], interface: str = "") -> dict[str, str]:
         """

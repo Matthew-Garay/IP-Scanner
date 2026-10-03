@@ -4,6 +4,7 @@ import inspect
 import ipaddress
 import unittest
 
+from ip_inspector.core import network
 from ip_inspector.core.models import SCAN_PORTS, ScanRequest
 from ip_inspector.core.network import NetworkScanner
 from ip_inspector.core.utils import (
@@ -87,6 +88,99 @@ class VpnSweeping(unittest.TestCase):
 
     def test_la_deteccion_de_vpn_no_revienta(self):
         self.assertFalse(is_ip_in_virtual_subnet("no-es-una-ip"))
+
+
+class AbsorbeArpTrasSondeo(unittest.TestCase):
+    """
+    La instantanea ARP se tomaba ANTES del sondeo de alcance, pero es el
+    sondeo justamente lo que hace que el sistema resuelva cada host a una MAC.
+    Esas resoluciones llegan a la tabla de vecinos despues de la foto, asi que
+    los hosts que el escaner tocaba por primera vez descartaban su MAC y la
+    columna salia en blanco pese a que el sistema ya la conocia.
+    """
+
+    def setUp(self):
+        self.scanner = NetworkScanner.__new__(NetworkScanner)
+        self.originals = {
+            "read_arp_cache": network.read_arp_cache,
+            "is_elevated": network.is_elevated,
+            "supports_layer2": network.supports_layer2,
+        }
+
+    def tearDown(self):
+        network.read_arp_cache = self.originals["read_arp_cache"]
+        network.is_elevated = self.originals["is_elevated"]
+        network.supports_layer2 = self.originals["supports_layer2"]
+
+    def _sin_capa2(self, cache):
+        network.is_elevated = lambda: False
+        network.supports_layer2 = lambda: False
+        network.read_arp_cache = lambda: dict(cache)
+
+    def test_recupera_la_mac_que_enseno_el_sondeo(self):
+        # El host estaba en la foto vacia, pero el sondeo lo resolvio.
+        self._sin_capa2({"192.168.30.7": "aa:bb:cc:dd:ee:01"})
+        tabla: dict[str, str] = {}
+        alcanzables = {"192.168.30.7": (1.0, None)}
+
+        NetworkScanner._absorb_arp_after_probe(self.scanner, tabla, alcanzables)
+
+        self.assertEqual(tabla.get("192.168.30.7"), "aa:bb:cc:dd:ee:01")
+
+    def test_no_pisa_una_mac_ya_conocida(self):
+        self._sin_capa2({"192.168.30.7": "aa:bb:cc:dd:ee:01"})
+        tabla = {"192.168.30.7": "11:22:33:44:55:66"}
+
+        NetworkScanner._absorb_arp_after_probe(
+            self.scanner, tabla, {"192.168.30.7": (1.0, None)})
+
+        self.assertEqual(tabla["192.168.30.7"], "11:22:33:44:55:66")
+
+    def test_sin_entrada_sigue_sin_mac(self):
+        # Un host inalcanzable para ARP se queda sin MAC; eso es correcto.
+        self._sin_capa2({})
+        tabla: dict[str, str] = {}
+
+        NetworkScanner._absorb_arp_after_probe(
+            self.scanner, tabla, {"192.168.30.7": (1.0, None)})
+
+        self.assertEqual(tabla, {})
+
+    def test_con_capa2_no_relee_la_tabla(self):
+        # Con L2 el barrido ARP ya contesto por todos: releer no aportaria nada.
+        network.is_elevated = lambda: True
+        network.supports_layer2 = lambda: True
+        llamadas = []
+
+        def cache():
+            llamadas.append(1)
+            return {"192.168.30.7": "aa:bb:cc:dd:ee:01"}
+
+        network.read_arp_cache = cache
+        tabla: dict[str, str] = {}
+
+        NetworkScanner._absorb_arp_after_probe(
+            self.scanner, tabla, {"192.168.30.7": (1.0, None)})
+
+        self.assertEqual(tabla, {})
+        self.assertEqual(llamadas, [])
+
+    def test_una_sola_lectura_de_la_tabla(self):
+        """ releer por cada host reenumeraria todas las interfaces 200 veces."""
+        self._sin_capa2({})
+        llamadas = []
+
+        def cache():
+            llamadas.append(1)
+            return {}
+
+        network.read_arp_cache = cache
+        alcanzables = {"192.168.30.%d" % n: (1.0, None) for n in range(2, 60)}
+
+        NetworkScanner._absorb_arp_after_probe(
+            self.scanner, {}, alcanzables)
+
+        self.assertEqual(len(llamadas), 1)
 
 
 if __name__ == "__main__":
