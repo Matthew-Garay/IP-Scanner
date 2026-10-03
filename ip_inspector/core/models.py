@@ -147,6 +147,28 @@ class Device:
                             key=lambda port: port.number)
         return ", ".join(port.label for port in open_ports)
 
+    def ports_compact(self, fit: int = 5) -> str:
+        """
+        The open ports reduced to what fits one table row, plus a count.
+
+        A host with twenty services needs several hundred pixels to write them
+        all out, and a grid row is 26px tall: showing the full list in the cell
+        silently hid all but the first line, which looked like the scanner had
+        missed the other ports.
+
+        Only the numbers are listed here. At this size the service names are
+        what pushed the list past the edge, and a column of bare ports is also
+        what an operator scans fastest. The names live in the context menu,
+        the export and the report, which are wide enough to carry them.
+        """
+        numbers = sorted(port.number for port in self.open_ports if port.is_open)
+        if not numbers:
+            return "-"
+        shown = numbers[:fit]
+        rest = len(numbers) - len(shown)
+        text = ", ".join(str(number) for number in shown)
+        return f"{text}  +{rest}" if rest > 0 else text
+
     def has_port(self, number: int) -> bool:
         return any(port.number == number and port.is_open for port in self.open_ports)
 

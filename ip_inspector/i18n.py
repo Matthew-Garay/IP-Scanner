@@ -612,6 +612,9 @@ CATALOG: dict[str, dict[str, str]] = {
     "ctx.web": {"en": "Open in browser", "es": "Abrir en el navegador"},
     "ctx.wol": {"en": "Wake-on-LAN", "es": "Wake-on-LAN"},
     "ctx.copy": {"en": "Copy IP", "es": "Copiar IP"},
+    # The cell only fits a few services; this opens the complete list.
+    "ctx.ports": {"en": "Show all ports ({count})", "es": "Ver todos los puertos ({count})"},
+    "btn.close": {"en": "Close", "es": "Cerrar"},
     "ctx.audit": {"en": "Audit this device", "es": "Auditar este equipo"},
     "ctx.latency": {
         "en": "Track latency live",

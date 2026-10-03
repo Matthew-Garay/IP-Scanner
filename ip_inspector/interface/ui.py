@@ -126,21 +126,25 @@ TAB_NAME_WIDTH = 16
 #: ``monospace`` is mandatory on the technical columns: addresses, MACs,
 #: TTL, latency and the port list, where character alignment carries meaning.
 DEVICE_COLUMNS: tuple[tuple[str, int, str, bool, str], ...] = (
-    ("col.ip",        118, "w",      True,  "ip"),
+    ("col.ip",        110, "w",      True,  "ip"),
     ("col.status",     20, "center", False, "status"),
     ("col.icon",       24, "center", False, "type"),
-    ("col.type",       96, "w",      False, "type"),
-    ("col.hostname",  112, "w",      False, "hostname"),
-    ("col.mac",       124, "w",      True,  "mac"),
-    ("col.vendor",    104, "w",      False, "vendor"),
-    ("col.model",     104, "w",      False, "model"),
-    ("col.vpn",        38, "center", False, "vpn"),
-    ("col.ttl",        36, "center", True,  "ttl"),
-    ("col.latency",    50, "center", True,  "latency"),
-    ("col.method",     60, "center", False, "method"),
-    ("col.risk",       44, "center", True,  "risk"),
-    ("col.alerts",     52, "center", False, "alerts"),
-    ("col.ports",     126, "w",      True,  "ports"),
+    ("col.type",       86, "w",      False, "type"),
+    ("col.hostname",  100, "w",      False, "hostname"),
+    ("col.mac",       114, "w",      True,  "mac"),
+    ("col.vendor",     94, "w",      False, "vendor"),
+    ("col.model",      94, "w",      False, "model"),
+    ("col.vpn",        36, "center", False, "vpn"),
+    ("col.ttl",        34, "center", True,  "ttl"),
+    ("col.latency",    48, "center", True,  "latency"),
+    ("col.method",     52, "center", False, "method"),
+    ("col.risk",       42, "center", True,  "risk"),
+    ("col.alerts",     48, "center", False, "alerts"),
+    # The densest column in the grid, so it gets the widest declared box: the
+    # cell is one line tall and its wrap length is fixed from this number, so
+    # a narrow declaration here is what clips the service list. 200px is the
+    # measured point where six open ports plus a count still fit on one line.
+    ("col.ports",     200, "w",      True,  "ports"),
 )
 
 #: Index of the column that renders the coloured status dot.
@@ -1071,7 +1075,7 @@ class IPInspectorApp(ctk.CTk):
             device.discovery_method or "-",
             str(device.risk_score) if device.risk_score else "-",
             str(device.alerts_count) if device.alerts_count else "-",
-            device.ports_summary or "-",
+            device.ports_compact() if device.open_port_count else "-",
         ]
 
     def _render_table(self, force: bool = False) -> None:
@@ -2948,6 +2952,35 @@ class IPInspectorApp(ctk.CTk):
             self._append_output(f"    * {issue}")
         self._append_output("")
 
+    def _show_all_ports(self, device: Device) -> None:
+        """
+        Show every open port of a host in a window of its own.
+
+        The grid cell is one line tall by design, so this is where the complete
+        list is actually readable. It is also copyable, which is what an
+        operator does with it.
+        """
+        top = tk.Toplevel(self)
+        top.title(f"{i18n.t('ctx.ports', count=device.open_port_count)}"
+                  f" - {device.ip_address}")
+        top.geometry("460x420")
+        top.transient(self)
+
+        text = tk.Text(top, wrap="none", font=ctk.CTkFont(size=11),
+                       borderwidth=0, highlightthickness=0)
+        scroll = ctk.CTkScrollbar(top, command=text.yview)
+        text.configure(yscrollcommand=scroll.set)
+        text.pack(side="left", fill="both", expand=True, padx=(10, 0), pady=10)
+        scroll.pack(side="right", fill="y", padx=(0, 10), pady=10)
+
+        text.insert("1.0", device.ports_summary or "-")
+        text.configure(state="disabled")
+
+        ctk.CTkButton(
+            top, text=i18n.t("btn.close"), width=90,
+            command=top.destroy,
+        ).pack(pady=(0, 10))
+
     def _on_context_menu(self, event) -> None:
         """Right-click actions for the device under the pointer."""
         key = self._table.key_at(event.y)
@@ -2982,6 +3015,14 @@ class IPInspectorApp(ctk.CTk):
             state="normal" if device.mac_address else "disabled",
         )
         menu.add_separator()
+        # The cell only fits a few services, so the full list is one click away
+        # here. Without it a host with twenty open ports looked like it had
+        # four.
+        if device.open_port_count:
+            menu.add_command(
+                label=i18n.t("ctx.ports", count=device.open_port_count),
+                command=lambda: self._show_all_ports(device),
+            )
         menu.add_command(label=i18n.t("ctx.copy"), command=lambda: self._copy(device.ip_address))
         menu.add_command(label=i18n.t("ctx.export"), command=lambda: self._export_row(device))
         menu.add_command(label=i18n.t("ctx.audit"), command=lambda: self._do_audit(device))
