@@ -89,9 +89,25 @@ class NetworkAdapter:
         an autoconfiguration segment nobody routes to, so it is rejected here
         exactly as :func:`_is_sweepable` rejects it: the selector must never
         offer a range the scanner would refuse to suggest.
+
+        Being outside RFC 1918 does not disqualify an adapter, which is what
+        lets a VPN overlay be scanned like any other. Its range is clamped by
+        :func:`clamp_to_sweep`, so a virtual adapter advertising a /8 still
+        offers something a sweep can actually finish.
         """
         return (bool(self.network) and self.is_up
                 and not self.is_loopback and not self.is_link_local)
+
+    @property
+    def sweep_range(self) -> str:
+        """The range to sweep for this adapter, clamped to a sweepable size."""
+        if not self.network or not self.is_scannable:
+            return ""
+        try:
+            return clamp_to_sweep(
+                ipaddress.ip_network(self.network, strict=False))
+        except ValueError:
+            return ""
 
     @property
     def is_loopback(self) -> bool:
@@ -542,25 +558,59 @@ def local_network_hint(interface: str = "") -> str:
         if gateway_address is not None:
             for network in networks:
                 if gateway_address in network:
-                    return str(network)
+                    return clamp_to_sweep(network)
 
     if not networks:
         return "192.168.1.0/24"
     best = min(networks, key=lambda network: network.num_addresses)
-    return f"{best.network_address}/16" if best.prefixlen < 16 else str(best)
+    return clamp_to_sweep(best)
 
 
 def _is_sweepable(network: ipaddress.IPv4Network) -> bool:
     """
-    True for a subnet worth sweeping: private, not loopback, not 169.254.
+    True for a subnet worth sweeping.
 
-    RFC 1918 is the useful case. Link-local autoconfiguration addresses look
-    private to :mod:`ipaddress` but describe a segment nobody routes to, and
-    scanning one only wastes a sweep.
+    Loopback and 169.254 are rejected: they describe segments nobody routes to,
+    and scanning one only wastes a sweep. Link-local autoconfiguration addresses
+    look private to :mod:`ipaddress` but belong to that same dead space.
+
+    Being outside RFC 1918 is no longer disqualifying. A VPN is very often a
+    public-looking overlay -- carrier-grade NAT at 100.64/10, or an outright
+    public block handed out point to point -- and refusing those meant that
+    picking the VPN adapter in the selector still swept the LAN behind it.
+    The range reaching the scanner is the one the operator chose, so the
+    address block is not what decides whether it is worth sweeping.
     """
-    if not network.is_private or network.is_loopback or network.is_link_local:
+    if network.is_loopback or network.is_link_local:
         return False
-    return network.num_addresses > 1
+    if network.num_addresses <= 1:
+        return False
+    # A /0 or a /1 is not a network, it is the internet; sweeping it would be a
+    # mistake rather than a scan.
+    return network.prefixlen >= 8
+
+
+def clamp_to_sweep(network: ipaddress.IPv4Network,
+                   limit: int = 65534) -> str:
+    """
+    The network to actually offer, shrunk until it fits in ``limit`` addresses.
+
+    A VPN frequently advertises a mask wide enough to cover the whole address
+    space (this machine has one advertising /8, sixteen million hosts). Offering
+    that as the suggested range is useless: the planner would refuse it and the
+    operator would have to work out a sensible prefix themselves. Narrowing
+    from the top keeps the adapter's own address inside the range, which is
+    what makes the suggestion usable rather than arbitrary.
+    """
+    if network.num_addresses <= limit:
+        return str(network)
+    prefix = network.prefixlen
+    while prefix < 32:
+        prefix += 1
+        candidate = ipaddress.ip_network(f"{network.network_address}/{prefix}")
+        if candidate.num_addresses <= limit:
+            break
+    return str(candidate)
 
 
 # ---------------------------------------------------------------------------
