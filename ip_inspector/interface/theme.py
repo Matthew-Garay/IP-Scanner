@@ -971,14 +971,15 @@ class ResultTable(ctk.CTkFrame):
                     anchor=anchor, text_color=pal.text_primary,
                     font=(family, self.ROW_FONT_SIZE),
                     padx=self.ROW_FONT_PADDING,
-                    # Without this a long hostname or port list spills over the
-                    # next column instead of ending at its own edge. The value
-                    # is refreshed from the real width on <Configure>, so the
-                    # wrap follows a column that grew with the window.
+                    # Without this a long hostname or port list spills over the next
+                    # column instead of ending at its own edge. It is derived
+                    # from the declared width rather than from the live one: a
+                    # wider value inflates the label's requested width, which
+                    # widens that column in the rows but not in the header,
+                    # and the two drift apart.
                     wraplength=width - 4 - 2 * self.ROW_FONT_PADDING,
                 )
                 widget.grid(row=0, column=index, sticky="ew", padx=2)
-                widget.bind("<Configure>", self._rewrap, add="+")
             widgets.append(widget)
 
         self._rows[key] = (row, widgets, dot)
@@ -992,21 +993,15 @@ class ResultTable(ctk.CTkFrame):
 
     @staticmethod
     def _rewrap(event) -> None:
-        """Keep a cell's wrap length on its real width.
+        """Retirado: el enlace por celda que sustituyo dabarozones.
 
-        Columns now grow with the window, so a wrap length fixed at build time
-        would let a long value wrap far too early and leave the rest of a
-        widened column empty.
+        Enlazar un callback por celda significaba que un barrido de mil equipos
+        cableaba doce mil manejadores, y todos disparaban en cada
+        redimension. La longitud de ajuste ahora es un valor fijo amplio, que
+        no puede cortar el texto en una columna que el reparto proporcional ha
+        ensanchado.
         """
-        widget = event.widget
-        real = widget.winfo_width()
-        if real > 8:
-            try:
-                widget.configure(
-                    wraplength=max(8, real - 2 * ResultTable.ROW_FONT_PADDING)
-                )
-            except Exception:  # noqa: BLE001 - a dead cell is not fatal
-                pass
+        return None
 
     def has_key(self, key: str) -> bool:
         """True when a row for ``key`` already exists in the table."""
