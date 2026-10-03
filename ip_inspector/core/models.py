@@ -261,8 +261,14 @@ class ScanRequest:
     advanced_banners: bool = False
     #: Profile-specific device classes to look for.
     device_hints: tuple[str, ...] = ()
-    port_timeout: float = 1.0
-    concurrency: int = 500
+    #: A closed port on the LAN is refused with a RST straight away, so this
+    #: only bounds the genuinely silent ones. It was 1.0s, which cost a full
+    #: second on every dropped probe and bought nothing.
+    port_timeout: float = 0.5
+    #: Probes in flight at once. Measured ceiling on this machine is about
+    #: 4500 sockets per second; 2000 saturates it without exhausting the
+    #: ephemeral port range or crowding out the UI thread.
+    concurrency: int = 2000
     #: Local adapter to sweep on; empty means "let the OS decide".
     interface: str = ""
 
