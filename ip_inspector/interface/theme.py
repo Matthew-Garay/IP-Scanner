@@ -78,38 +78,44 @@ class Palette:
 #: field and card is white, so an input always reads as something you can
 #: type in. Status colours are dark enough to carry text on white.
 LIGHT = Palette(
-    primary="#005FA3",
-    primary_hover="#00508C",
-    primary_active="#004578",
-    accent="#0B4F8A",
-    accent_hover="#093F6E",
+    primary="#0B64C8",
+    primary_hover="#0A57AB",
+    primary_active="#084A90",
+    accent="#084A90",
+    accent_hover="#063C74",
     accent_text="#FFFFFF",
-    background="#E9EDF2",
+    # Soft neutral greys instead of a tinted blue-grey: the window is a work
+    # surface, and the chrome must recede so the table carries the screen.
+    background="#F3F4F6",
     surface="#FFFFFF",
-    surface_alt="#F4F6F9",
-    hover="#E3EAF2",
-    text_primary="#1B2430",
-    text_secondary="#4A5568",
-    text_muted="#64707F",
-    header_bg="#1F4E79",
-    header_text="#FFFFFF",
+    surface_alt="#F9FAFB",
+    hover="#EFF3F8",
+    text_primary="#1F2933",
+    text_secondary="#55606E",
+    text_muted="#7A8494",
+    # The header is a light bar, not a coloured slab. A dark blue strip would
+    # read as a separate application stacked on top of the grid below it.
+    header_bg="#FFFFFF",
+    header_text="#55606E",
     row_even="#FFFFFF",
-    row_odd="#F5F8FB",
-    grid_line="#DFE5EC",
-    selection="#CFE4F7",
+    row_odd="#FAFAFA",
+    # Hairline between rows. Structure comes from one faint line rather than
+    # from borders around every cell, which is what a spreadsheet shows.
+    grid_line="#E6E8EB",
+    selection="#DCE9F7",
     selection_text="#123A5C",
-    border="#C3CCD8",
+    border="#D3D8DF",
     field="#FFFFFF",
-    field_border="#7C8797",
-    field_focus="#005FA3",
-    chip="#EDF1F6",
-    chip_text="#35414F",
+    field_border="#C7CDD6",
+    field_focus="#0B64C8",
+    chip="#F1F3F6",
+    chip_text="#3A4553",
     input_bg="#FFFFFF",
-    online="#157F3D",
-    vpn="#B25E09",
+    online="#16A34A",
+    vpn="#B45309",
     warning="#C0392B",
-    state_ok="#157F3D",
-    state_warn="#B25E09",
+    state_ok="#16A34A",
+    state_warn="#B45309",
     state_off="#C0392B",
     state_idle="#6B7684",
 )
@@ -266,6 +272,27 @@ def caption(master, text: str) -> ctk.CTkLabel:
 
 
 def progress_bar(master, width: int = 320, height: int = 6):
+    """A flat progress bar with no chrome around it.
+
+    The groove and the fill are plain frames so the bar can sit flush against
+    the status strip as a 2px rule rather than as a pill floating in it.
+    """
+    outer = ctk.CTkFrame(master, fg_color="transparent", width=width,
+                         height=height)
+    outer.pack_propagate(False)
+    outer.grid_propagate(False)
+    track = ctk.CTkFrame(outer, fg_color=current().surface_alt, height=height,
+                         corner_radius=0)
+    track.pack(fill="both", expand=True)
+    fill = ctk.CTkFrame(track, fg_color=current().primary, width=0,
+                        height=height, corner_radius=0)
+    fill.place(x=0, y=0, relheight=1.0)
+
+    def set(value: float) -> None:
+        fraction = max(0.0, min(1.0, float(value)))
+        fill.place_configure(relwidth=fraction)
+
+    return outer, set
     """Thin progress bar for the status bar: no visual noise, no modal."""
     p = current()
     return ctk.CTkProgressBar(
@@ -701,19 +728,19 @@ class ResultTable(ctk.CTkFrame):
     instead of a label; ``rebuild`` then feeds it the samples for that row.
     """
 
-    #: Height of a data row, in pixels. Generous on purpose: this is a reading
-    #: surface, not a status strip, and a technician scanning a page of hosts
-    #: should be able to take a row in at a glance. The cost is one more row
-    #: off the viewport, which is far cheaper than squinting at 10px text.
-    ROW_HEIGHT = 34
+    #: Height of a data row, in pixels. Compact on purpose: the point of the grid
+    #: is to show a whole segment at a glance, so 26px buys roughly a third more
+    #: hosts per screen than the 34px this used to be, and still matches what a
+    #: spreadsheet row costs.
+    ROW_HEIGHT = 26
 
-    #: Font sizes, in points. The body is one step above the 9pt header so a
+    #: Font sizes, in points. The body is one step above the 8pt header so a
     #: row reads as data rather than as chrome.
-    HEADER_FONT_SIZE = 10
-    ROW_FONT_SIZE = 12
+    HEADER_FONT_SIZE = 9
+    ROW_FONT_SIZE = 10
     #: Leading for cells, as a share of the font size. Native Windows already
     #: spaces these faces well, so this is close to neutral.
-    ROW_FONT_PADDING = 4
+    ROW_FONT_PADDING = 3
 
     def __init__(self, master, columns, on_sort=None, on_select=None,
                  sparkline=None, dot=None, icon=None, icons=None):
@@ -846,11 +873,21 @@ class ResultTable(ctk.CTkFrame):
         pal = current()
         if selected:
             background = pal.selection
-            border = pal.primary
+            border = background
         else:
             background = pal.row_even if position % 2 == 0 else pal.row_odd
             border = background
         row.configure(fg_color=background, border_color=border)
+        # One hairline under each row, drawn as a widget because a canvas
+        # cannot inherit its parent's colour. Spreadsheet rules: a single faint
+        # line separating rows, not a frame around each one.
+        separator = getattr(row, "_grid_line", None)
+        if separator is None:
+            separator = tk.Frame(row, height=1, bg=pal.grid_line)
+            separator.place(x=0, y=self.ROW_HEIGHT - 1, relwidth=1.0)
+            row._grid_line = separator
+        else:
+            separator.configure(bg=pal.grid_line)
         # A canvas cannot inherit its parent's colour, so the chart cells are
         # told which stripe they are sitting on.
         for widget in row.winfo_children():
@@ -879,7 +916,11 @@ class ResultTable(ctk.CTkFrame):
         pal = current()
         row = ctk.CTkFrame(
             self._body, fg_color="transparent", height=self.ROW_HEIGHT,
-            corner_radius=3, border_width=1,
+            # No border around the row: the separator below it is the only line
+            # the grid needs. Bordering every row drew a box per host, which
+            # is what made the table read as a stack of cards rather than a
+            # spreadsheet.
+            corner_radius=0, border_width=0,
         )
         row.grid(row=position, column=0, sticky="ew", pady=0)
         # Every row reserves exactly the widths the header reserved, with the

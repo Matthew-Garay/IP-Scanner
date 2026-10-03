@@ -174,6 +174,16 @@ CATALOG: dict[str, dict[str, str]] = {
     # -- runtime messages ----------------------------------------------
     "status.ready": {"en": "Ready", "es": "Listo"},
     "status.scanning": {"en": "Scanning...", "es": "Escaneando..."},
+    # Live readout in the status strip: how far along, and how many of how many.
+    "status.progress": {
+        "en": "{percent}%  ·  {done} of {total}",
+        "es": "{percent}%  ·  {done} de {total}",
+    },
+    # Counter of what the sweep has actually turned up.
+    "status.found": {
+        "en": "{count} active devices",
+        "es": "{count} dispositivos activos",
+    },
     "status.shown": {"en": "{count} shown", "es": "{count} mostrados"},
     "status.sorted": {"en": "sorted by {column} {arrow}", "es": "orden por {column} {arrow}"},
     "status.findings": {
