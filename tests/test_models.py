@@ -82,5 +82,79 @@ class IdentityCoverage(unittest.TestCase):
             self.assertIn(puerto, IDENTITY_PORTS)
 
 
+class PortsColumn(unittest.TestCase):
+    """
+    La celda de puertos mostraba la lista completa en una fila de 26px de alto.
+    Con siete servicios son 532 px de texto en una celda de 116 px: solo se
+    veia la primera linea, y parecian faltar puertos que el escaner si habia
+    encontrado. Ahora la celda lista solo numeros y declara cuantos mas hay,
+    y la lista completa vive en el menu contextual y en la exportacion.
+    """
+
+    PUERTOS = [22, 80, 443, 445, 3389, 8080, 9100, 3306, 5432, 6379,
+               1883, 554, 8554, 23, 25, 53, 110, 139, 143, 389, 587, 631,
+               993, 995, 1433, 5000, 8443, 9090, 8081, 81]
+
+    def _device(self, count):
+        device = Device(ip_address="10.0.0.1")
+        for number in self.PUERTOS[:count]:
+            device.open_ports.append(Port(number=number, state="open",
+                                          service="svc"))
+        return device
+
+    def _declarados(self, celda):
+        """Cuantos puertos declara la celda, contando los del '+N'."""
+        import re
+        cabeza, _, cola = celda.partition("+")
+        return len(re.findall(r"\d+", cabeza)) + (int(cola) if cola else 0)
+
+    def test_la_celda_no_omite_ningun_puerto(self):
+        for count in range(1, len(self.PUERTOS) + 1):
+            device = self._device(count)
+            self.assertEqual(self._declarados(device.ports_compact()), count,
+                             "con %d puertos la celda declara otra cosa" % count)
+
+    def test_la_celda_cabe_en_su_columna(self):
+        """El texto mostrado tiene que caber en el ancho declarado."""
+        try:
+            import tkinter as tk
+            from tkinter import font as tkfont
+            from ip_inspector.interface.ui import DEVICE_COLUMNS
+        except Exception as exc:  # pragma: no cover - sin tkinter
+            self.skipTest("no hay interfaz: %s" % exc)
+
+        columna = [c for c in DEVICE_COLUMNS if c[4] == "ports"][0]
+        wraplength = columna[1] - 4 - 2 * 3
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            fuente = tkfont.Font(family="Consolas", size=10)
+            for count in range(1, len(self.PUERTOS) + 1):
+                ancho = fuente.measure(self._device(count).ports_compact())
+                self.assertLessEqual(ancho, wraplength,
+                                     "con %d puertos la celda mide %d px "
+                                     "y el limite es %d"
+                                     % (count, ancho, wraplength))
+        finally:
+            root.destroy()
+
+    def test_el_resumen_completo_sigue_intacto(self):
+        """Lo compacto es solo la celda: el resumen entero no se toca."""
+        device = self._device(12)
+        self.assertEqual(
+            len(device.ports_summary.split(", ")), 12,
+            "ports_summary debe seguir trayendo los doce servicios")
+
+    def test_sin_puertos_abiertos_devuelve_guion(self):
+        vacio = Device(ip_address="10.0.0.1")
+        self.assertEqual(vacio.ports_compact(), "-")
+
+    def test_los_cerrados_no_cuentan(self):
+        device = Device(ip_address="10.0.0.1")
+        device.open_ports.append(Port(number=443, state="open"))
+        device.open_ports.append(Port(number=80, state="closed"))
+        self.assertEqual(device.ports_compact(), "443")
+
+
 if __name__ == "__main__":
     unittest.main()
