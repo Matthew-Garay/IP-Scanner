@@ -1,48 +1,25 @@
 # IP Inspector
 
-Aplicacion de escritorio para Windows que descubre los dispositivos de una red
-local, analiza que puertos tienen abiertos, identifica el modelo y el sistema
-operativo de cada equipo y audita su postura de seguridad.
+Aplicacion de escritorio para Windows que escanea la red local: encuentra los dispositivos conectados, revisa que puertos tienen abiertos, identifica modelo y sistema operativo de cada uno y checa si su configuracion es segura.
 
-Todo ocurre en la red local del operador: no sale a Internet, no sube datos a
-ningun servicio y funciona sin conexion una vez instalado.
+Funciona sin conexion una vez instalado y no manda nada a ningun lado. Lo hice para ver que hay en mi propia red sin montar un servidor ni instalar Kali.
 
-- **Autor:** Matthew Garay
-- **Lenguaje:** Python 3.13+
-- **Interfaz:** CustomTkinter (escritorio nativo de Windows)
+- Python 3.13 o superior
+- Interfaz con CustomTkinter
 
 ---
 
-## Que hace
+## Que trae
 
-La aplicacion tiene seis pestanas que comparten una sola ventana:
+La app tiene seis pestanas en una sola ventana. *Network Scan* es lo principal: descubre los equipos y sondea los puertos TCP del 1 al 1024 (siempre los mismos, para que dos escaneos se puedan comparar). Tambien toma las IPs de la VPN del equipo, no solo la tarjeta fisica.
 
-| Pestana | Funcion |
-| --- | --- |
-| **Network Scan** | Descubrimiento de hosts y sondeo de puertos TCP. |
-| **Security Audit** | TLS, postura HTTP y puntuacion de riesgo por dispositivo. |
-| **Tools** | DNS, WHOIS, traceroute, calculo de subredes y exposicion local. |
-| **Quick Tools** | Traceroute visual, grafico de latencia en vivo, subredes y DNS. |
-| **Inventory** | Dispositivos vistos hasta ahora, comparados contra una linea base. |
-| **Monitor** | Comprobaciones continuas de disponibilidad y avisos. |
+*Security Audit* revisa TLS y HTTP de cada equipo y le da una puntuacion de riesgo. *Tools* y *Quick Tools* son utilidades sueltas: DNS, WHOIS, traceroute, calculo de subredes, grafica de latencia. *Inventory* guarda lo visto y lo compara con una linea base para notar si algo aparecio o se fue, y *Monitor* revisa cada pocos minutos si los equipos siguen respondiendo.
 
-Detalles de comportamiento que conviene conocer antes de usarla:
-
-- El barrido es fijo: recorre los puertos **1 a 1024**. El operador ya no elige
-  la lista de puertos, de modo que cada barrido hace siempre la misma pregunta
-  (cuales de esos son alcanzables) y los resultados de dos escaneos son
-  comparables. Los puertos por encima de 1024 quedan para el diagnostico
-  propio de la pestana Tools.
-- El escaneo tambien recorre las IPs asignadas a la VPN del equipo, no solo la
-  LAN fisica.
-- La interfaz es **bilingue** (ingles / espanol). El idioma cambia en caliente y
-  los informes PDF y HTML se generan en el idioma activo.
+La interfaz esta en ingles y espanol, se cambia en caliente, y los informes PDF y HTML salen en el idioma activo.
 
 ---
 
 ## Instalacion
-
-Requiere Python 3.13 o superior.
 
 ```powershell
 git clone https://github.com/Matthew-Garay/IP-Scanner.git
@@ -52,128 +29,58 @@ python -m venv .venv
 pip install -r ip_inspector\requirements.txt
 ```
 
-Dependencias (`ip_inspector/requirements.txt`):
-
-| Paquete | Para que se usa |
-| --- | --- |
-| `customtkinter` | Widgets de la interfaz de escritorio. |
-| `scapy` | Sondeo de la capa 2 (descubrimiento de hosts en el segmento). |
-| `psutil` | Detalle de las interfaces de red del equipo. |
-| `mac-vendor-lookup` | Lista de fabricantes IEEE OUI; se descarga y cachea en el primer uso, despues funciona sin conexion. |
-
-`netifaces` se deja fuera a proposito: no publica ruedas para Python 3.13+ y
-obligaria a instalar un compilador de Visual C++. `psutil` ya expone todos los
-datos de interfaz que necesita el escaner.
+Las dependencias son `customtkinter`, `scapy`, `psutil` y `mac-vendor-lookup`. Esta ultima descarga la lista de fabricantes de MAC en el primer arranque y despues trabaja sin conexion. `netifaces` no esta porque no publica paquetes para Python 3.13 y con `psutil` basta.
 
 ---
 
 ## Uso
 
-Desde la raiz del repositorio:
-
 ```powershell
 python -m ip_inspector.main
 ```
 
-Tambien funciona como script suelto:
+Hay que **correrlo como administrador**. Sin ese permiso Windows no deja abrir los sockets del sondeo de descubrimiento y la app no ve los equipos que contestan por ARP.
 
-```powershell
-python ip_inspector\main.py
-```
-
-Para empezar a escanear hay que **ejecutar el programa como administrador**.
-Sin ese permiso Windows no permite abrir los sockets sin privilege para las
-direcciones de difusion, y el escaner no ve los hosts que responden por ARP.
-
----
-
-## Pruebas
-
-Las pruebas solo usan la libreria estandar. Cada una reproduce un fallo real que
-estuvo en produccion: son las trampas concretas en las que ha caido la
-aplicacion, fijadas para que no vuelvan a caerse sin que nadie se entere.
+Pruebas:
 
 ```powershell
 python -m unittest discover -s tests -t . -v
 ```
 
+Cada prueba existe porque ese bug ya salio antes y no quiero que vuelva.
+
 ---
 
-## Empaquetado en un ejecutable
+## Compilar el ejecutable
 
 ```powershell
 pip install pyinstaller
 pyinstaller ip_inspector\IP_Inspector.spec
 ```
 
-El `.spec` empaqueta `ip_inspector/launcher.py`, que es el punto de entrada que
-PyInspector resuelve bien. `main.py` usa una importacion relativa
-(`from .interface.ui import ...`) que el analizador de PyInstaller solo resuelve
-a medias: empaqueta `main.py` pero se deja los subpaquetes hermanos fuera, y el
-ejecutable arranca sin ninguna de las capas. `launcher.py` importa el punto de
-entrada de forma absoluta (`from ip_inspector.main import main`), lo que hace
-visible todo el paquete al analizador.
-
-El ejecutable resultante es `dist/IP_Inspector.exe`.
+El `.spec` apunta a `ip_inspector/launcher.py` y no a `main.py` a proposito: PyInstaller no sigue la importacion relativa (`from .interface.ui import ...`), empaqueta `main.py` solo y el ejecutable arranca vacio. Con `launcher.py` la importacion es absoluta y el analizador ve todo el paquete. Sale como `dist/IP_Inspector.exe`.
 
 ---
 
-## Estructura del codigo
+## Estructura
 
-El paquete es una pila de capas y cada una solo puede importar de las que tiene
-debajo:
+El codigo va en capas y cada una solo importa de las de abajo:
 
 ```
-core       motor: modelos, utilidades, sondeo y el propio escaner
+core       el motor: modelos, utilidades, sondeo, el escaner
 analysis   que significan los hallazgos: riesgo, exposicion, informes
-actions    que se puede hacer con un dispositivo: abrirlo, despertarlo, exportarlo
-nettools   las pestanas Tools y el monitorizacion continua
+actions    que se le puede hacer a un equipo: abrirlo, despertarlo, exportarlo
+nettools   las pestanas de herramientas y el monitor
 interface  todo lo que toca tkinter
-i18n       el catalogo bilingue, usado por los informes y la ventana
+i18n       el catalogo bilingue
 ```
 
-Esta disciplina no es estetica. El motor (`core`) no importa la interfaz, asi
-que se puede usar sin pantalla: por eso un escaneo puede programarse en una
-maquina sin monitor. Y `models.py` no depende de nada, de modo que la
-interfaz se puede razonar y comprobar sin abrir un socket.
+Como `core` no importa la interfaz, se puede usar sin pantalla (por eso un escaneo se puede programar en una maquina sin monitor). La interfaz no se importa desde `__init__.py` para que usar solo el motor no cargue tkinter.
 
-Superficie publica del paquete:
-
-```python
-from ip_inspector import NetworkScanner, ScanRequest, Device
-from ip_inspector import tools, audit
-```
-
-La interfaz no se importa desde `__init__.py` a proposito, para que un consumo
-sin pantalla del motor no cargue tkinter.
-
----
-
-## Modelo de hilos
-
-Toda operacion larga corre en un hilo trabajador que deposita los resultados en
-una `queue.Queue`. El hilo principal la vacia con `after()`, que es la unica
-forma segura de actualizar tkinter desde otro hilo y mantiene la ventana
-responsiva durante un barrido completo.
+Lo largo corre en un hilo trabajador que deja resultados en una `queue.Queue`, y el hilo principal los saca con `after()`. Es la forma segura de tocar tkinter desde otro hilo y la ventana no se congela.
 
 ---
 
 ## Uso responsable
 
-Esta herramienta enumera y sondea otros equipos. Solo escanea redes sobre las
-que tenga autorizacion expresa. Sondear una red que no es suya puede ser ilegal
-y, con independencia de la ley, siempre es una forma de evitar el trabajo de
-pedir permiso.
-
----
-
-## Estructura de commits
-
-Los mensajes estan en castellano y describen el efecto del cambio, no el
-movimiento de archivos:
-
-```
-Rediseña la interfaz al estilo de un escaner de red profesional
-Arregla las columnas, el escaneo con VPN y la identificacion de camaras
-fix: agregar slash final a URL de wasm en pdfjs.js para evitar error Invalid factory url
-```
+Esto sondea equipos ajenos. Usalo solo en redes donde tengas permiso.
