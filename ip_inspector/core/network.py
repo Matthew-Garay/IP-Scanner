@@ -38,7 +38,6 @@ from .identify import (
     summarise_banner,
 )
 from .hostnames import resolve_many
-from .inventory import Inventory
 from .models import (
     KNOWN_SERVICES,
     Device,
@@ -122,8 +121,6 @@ class NetworkScanner:
     def __init__(self, event_queue: queue.Queue[ScannerEvent] | None = None) -> None:
         self.event_queue: queue.Queue[ScannerEvent] = event_queue or queue.Queue()
         self._stop_event = threading.Event()
-        self.inventory = Inventory()
-        self.inventory_changes: list = []
 
     # ------------------------------------------------------------------
     # Cancellation
@@ -173,38 +170,12 @@ class NetworkScanner:
         for device in devices:
             self._emit(ScannerEvent("Device", device=device))
 
-        self._emit(
-            ScannerEvent("Cancelled", "Scan stopped by user")
-            if self.is_stopping
-            else ScannerEvent("Finished", f"{len(devices)} devices found")
-        )
-
-        self._reconcile_inventory(devices)
+            self._emit(ScannerEvent("Finished", f"{len(devices)} devices found")
+                       if not self.is_stopping
+                       else ScannerEvent("Cancelled", "Scan stopped by user"))
 
         devices.sort(key=lambda device: int(ipaddress.ip_address(device.ip_address)))
         return devices
-
-    def _reconcile_inventory(self, devices: list[Device]) -> None:
-        """Diff the scan against the stored inventory baseline."""
-        self._emit(ScannerEvent("Inventory", "Comparing against inventory"))
-        try:
-            changes = self.inventory.reconcile(devices)
-        except Exception:  # noqa: BLE001 - never fail a scan over the baseline
-            logger.debug("Inventory reconciliation failed", exc_info=True)
-            self.inventory_changes = []
-            return
-
-        self.inventory_changes = changes
-        flagged = {change.mac for change in changes if change.kind == "new"}
-        for device in devices:
-            mac = (device.mac_address or "").upper()
-            if mac in flagged:
-                device.inventory_state = "new"
-                device.first_seen = next(
-                    c.first_seen for c in changes
-                    if c.kind == "new" and c.mac == mac
-                )
-        self._emit(ScannerEvent("Inventory", f"{len(changes)} inventory changes"))
 
     # ------------------------------------------------------------------
     # Event plumbing

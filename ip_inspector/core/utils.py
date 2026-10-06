@@ -197,9 +197,34 @@ def list_adapters() -> list[NetworkAdapter]:
     return adapters
 
 
-def find_adapter(name: str) -> NetworkAdapter | None:
-    """Look one adapter up by its exact name, or ``None`` when it is gone."""
-    return next((a for a in list_adapters() if a.name == name), None)
+#: Wi-Fi markers. Checked after the virtual hints, so a tunnel is never
+#: mistaken for the LAN just because its vendor name says wireless.
+WIFI_ADAPTER_HINTS: tuple[str, ...] = (
+    "wi-fi", "wifi", "wireless", "wlan", "802.11", "airport",
+)
+
+
+def link_kind(adapter: NetworkAdapter) -> str:
+    """
+    What the adapter connects the machine through: ``wifi``, ``vpn`` or ``wired``.
+
+    This is what the header shows now that no one picks an adapter by hand,
+    so it has to answer the question an operator actually asks -- *am I on
+    the wireless, on the cable, or inside a tunnel* -- rather than repeat the
+    Windows-friendly name, which says nothing to anyone ("Ethernet 2",
+    "Local Area Connection* 9").
+
+    The order is deliberate. Virtual wins over the wireless hints because a
+    VPN client very often calls its tunnel something friendly ("NordLynx" is
+    also the Wi-Fi adapter's neighbour in the list), and a tunnel that is
+    mistaken for the LAN is how a sweep ends up on the wrong segment.
+    """
+    if adapter.is_virtual:
+        return "vpn"
+    lowered = adapter.name.lower()
+    if any(hint in lowered for hint in WIFI_ADAPTER_HINTS):
+        return "wifi"
+    return "wired"
 
 
 # ---------------------------------------------------------------------------

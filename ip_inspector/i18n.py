@@ -53,7 +53,6 @@ CATALOG: dict[str, dict[str, str]] = {
     "tab.audit": {"en": "Security Audit", "es": "Auditoria"},
     "tab.tools": {"en": "Tools", "es": "Herramientas"},
     "tab.quick": {"en": "Quick Tools", "es": "Utilidades"},
-    "tab.inventory": {"en": "Inventory", "es": "Inventario"},
     "tab.monitor": {"en": "Monitor", "es": "Monitor"},
     # -- monitor --------------------------------------------------------
     "mon.add": {"en": "Add host", "es": "Anadir host"},
@@ -82,42 +81,6 @@ CATALOG: dict[str, dict[str, str]] = {
     "mon.stopped": {"en": "Monitoring stopped", "es": "Monitor detenido"},
     "mon.added": {"en": "{ip} added to the monitor", "es": "{ip} anadido al monitor"},
     "ctx.monitor": {"en": "Add to monitor", "es": "Anadir al monitor"},
-    # -- inventory -----------------------------------------------------
-    "inv.new": {"en": "NEW", "es": "NUEVO"},
-    "inv.identity": {"en": "CHANGED", "es": "CAMBIADO"},
-    "inv.vendor": {"en": "VENDOR", "es": "FABRICANTE"},
-    "inv.missing": {"en": "MISSING", "es": "AUSENTE"},
-    "inv.returning": {"en": "RETURN", "es": "REGRESO"},
-    "inv.known": {"en": "KNOWN", "es": "CONOCIDO"},
-    "inv.mac": {"en": "MAC", "es": "MAC"},
-    "inv.detail": {"en": "Detail", "es": "Detalle"},
-    "inv.vendorcol": {"en": "Vendor", "es": "Marca"},
-    "inv.typecol": {"en": "Type", "es": "Tipo"},
-    "inv.firstseen": {"en": "First seen", "es": "Visto por 1a"},
-    "inv.empty": {
-        "en": "Run a scan to compare the network against the stored inventory",
-        "es": "Ejecuta un escaneo para comparar la red con el inventario",
-    },
-    "inv.baseline": {
-        "en": "{count} devices in the baseline",
-        "es": "{count} equipos en el inventario",
-    },
-    "inv.summary": {
-        "en": "{new} new  ·  {changed} changed  ·  {missing} missing  ·  baseline {total}",
-        "es": "{new} nuevos  ·  {changed} cambiados  ·  {missing} ausentes  ·  base {total}",
-    },
-    "inv.approve": {"en": "Approve selected", "es": "Aprobar seleccionado"},
-    "inv.forget": {"en": "Forget selected", "es": "Olvidar seleccionado"},
-    "inv.reset": {"en": "Reset baseline", "es": "Reiniciar inventario"},
-    "inv.export": {"en": "Export report", "es": "Exportar informe"},
-    "inv.approved": {"en": "{mac} marked as approved", "es": "{mac} marcado como aprobado"},
-    "inv.forgotten": {"en": "{mac} removed from the inventory", "es": "{mac} eliminado del inventario"},
-    "inv.reset.done": {"en": "Inventory cleared", "es": "Inventario vaciado"},
-    "inv.reset.ask": {
-        "en": "This deletes every stored device and uses the next scan as the new baseline. Continue?",
-        "es": "Se borraran todos los equipos guardados y el proximo escaneo sera la nueva base. Continuar?",
-    },
-    "inv.saved": {"en": "Report written to {path}", "es": "Informe guardado en {path}"},
     # -- inputs --------------------------------------------------------
     "label.range": {"en": "Target range", "es": "Rango"},
     "label.ports": {"en": "Ports", "es": "Puertos"},
@@ -206,8 +169,8 @@ CATALOG: dict[str, dict[str, str]] = {
         "es": "Ejecuta un escaneo y luego audita un equipo",
     },
     "empty.hint": {
-        "en": "Run a scan to populate the inventory",
-        "es": "Ejecuta un escaneo para llenar el inventario",
+        "en": "Run a scan to see the devices on this network",
+        "es": "Ejecuta un escaneo para ver los equipos de esta red",
     },
     # -- scanner phases ------------------------------------------------
     "phase.discovery": {"en": "Discovery", "es": "Descubrimiento"},
@@ -428,27 +391,10 @@ CATALOG: dict[str, dict[str, str]] = {
         "en": "Scanning what parsed; ignored: {items}",
         "es": "Escaneando lo valido; se ignoran: {items}",
     },
-    # -- interface selector -----------------------------------------------
-    "iface.auto.short": {"en": "Auto", "es": "Auto"},
-    "iface.caption": {"en": "Interface", "es": "Interfaz"},
-    "iface.auto": {
-        "en": "Automatic (let the OS choose)",
-        "es": "Automatica (que elija el SO)",
-    },
-    "iface.virtual": {"en": "virtual", "es": "virtual"},
-    "iface.down": {"en": "disconnected", "es": "sin conectar"},
-    "iface.selected": {
-        "en": "Scanning from {name} ({network})",
-        "es": "Escaneando desde {name} ({network})",
-    },
-    "iface.gone": {
-        "en": "Adapter {name} is no longer connected",
-        "es": "El adaptador {name} ya no esta conectado",
-    },
-    "iface.unusable": {
-        "en": "{name} cannot host a scan: it has no routable IPv4 subnet",
-        "es": "{name} no admite un escaneo: no tiene una subred IPv4 enrutable",
-    },
+    # -- automatic link read-out ------------------------------------------
+    "link.wifi": {"en": "Wi-Fi", "es": "Wi-Fi"},
+    "link.wired": {"en": "Wired", "es": "Cable"},
+    "link.vpn": {"en": "VPN tunnel", "es": "Tunel VPN"},
     "exp.title.port": {"en": "Port {port} open", "es": "Puerto {port} abierto"},
     "exp.title.port_public": {
         "en": "Port {port} open on a public address",
@@ -593,16 +539,12 @@ CATALOG: dict[str, dict[str, str]] = {
     },
     # -- report ---------------------------------------------------------
     "report.subtitle": {
-        "en": "Network inventory report",
-        "es": "Informe de inventario de red",
+        "en": "Network report",
+        "es": "Informe de red",
     },
     "report.range": {"en": "Scope", "es": "Alcance"},
     "report.vpn": {"en": "VPN posture", "es": "Estado VPN"},
-    "report.inventory": {"en": "Device inventory", "es": "Inventario de equipos"},
-    "report.changes": {
-        "en": "Inventory changes since the last review",
-        "es": "Cambios de inventario desde la ultima revision",
-    },
+    "report.inventory": {"en": "Devices", "es": "Equipos"},
     "report.pdf": {"en": "Export PDF report", "es": "Exportar informe PDF"},
     "report.html": {"en": "Export HTML report", "es": "Exportar informe HTML"},
     "report.saved": {"en": "Report written to {path}", "es": "Informe guardado en {path}"},

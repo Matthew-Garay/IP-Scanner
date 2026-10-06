@@ -1,12 +1,11 @@
-"""CustomTkinter user interface for IP Inspector.
+﻿"""CustomTkinter user interface for IP Inspector.
 
-Six tabs share one window:
+Five tabs share one window:
 
 * **Network Scan**   - host discovery and TCP port probing.
 * **Security Audit** - TLS, HTTP posture and per-device risk scoring.
 * **Tools**          - DNS, WHOIS, traceroute, subnet maths, local exposure.
 * **Quick Tools**    - visual traceroute, live latency graph, subnet maths, DNS.
-* **Inventory**      - devices seen so far, compared against a baseline.
 * **Monitor**        - continuous reachability checks and alerts.
 
 This is the top of the stack: it reads from every layer below and is the
@@ -65,7 +64,7 @@ from ..core.utils import (
     MAX_TARGETS,
     NetworkAdapter,
     default_gateway,
-    find_adapter,
+    link_kind,
     list_adapters,
     local_network_hint,
     plan_targets,
@@ -112,15 +111,6 @@ LOGO_PATH = _logo_path()
 #: large to drop into a header unscaled.
 LOGO_HEIGHT = 52
 
-#: Adapters offered as a tab in the header before the control falls back to
-#: the dropdown, which lists everything but splits the header in two.
-MAX_INTERFACE_TABS = 4
-#: Longest an adapter name may be before its tab is trimmed.
-TAB_NAME_WIDTH = 16
-
-#: Device table layout: (i18n key, width, anchor, sort key, font style).
-#: Headers are translated on every render, so a language switch takes
-#: effect without rebuilding the module.
 #: Device table layout.
 #: (i18n key, width px, anchor, monospace, sort key)
 #: ``monospace`` is mandatory on the technical columns: addresses, MACs,
@@ -179,17 +169,6 @@ MONITOR_COLUMNS: tuple[tuple[str, int, str, bool, str], ...] = (
     ("mon.col.uptime",   78, "center", True,  "uptime"),
     ("mon.col.checks",   62, "center", True,  "checks"),
     ("mon.col.since",    78, "center", False, "since"),
-)
-
-#: Inventory change table: (i18n key, width px, anchor, monospace, sort key).
-INVENTORY_COLUMNS: tuple[tuple[str, int, str, bool, str], ...] = (
-    ("inv.new",        78, "center", False, "kind"),
-    ("inv.mac",       140, "w",      True,  "mac"),
-    ("col.ip",        112, "w",      True,  "ip"),
-    ("inv.detail",    330, "w",      False, "detail"),
-    ("inv.vendorcol", 150, "w",      False, "vendor"),
-    ("inv.typecol",   110, "w",      False, "type"),
-    ("inv.firstseen", 132, "w",      False, "first_seen"),
 )
 
 #: Severity order used when sorting the findings table.
@@ -272,7 +251,7 @@ WHOIS_LABEL_KEYS: dict[str, str] = {
 #: Tab order. Kept as catalogue keys so the visible tab can be restored
 #: after a language switch rebuilds the tab view with new labels.
 TAB_KEYS: tuple[str, ...] = (
-    "tab.scan", "tab.audit", "tab.tools", "tab.quick", "tab.inventory", "tab.monitor",
+    "tab.scan", "tab.audit", "tab.tools", "tab.quick", "tab.monitor",
 )
 
 #: Minimum milliseconds between full table repaints during a scan.
@@ -352,7 +331,7 @@ class IPInspectorApp(ctk.CTk):
 
         self._scanning = False
         self._busy = False
-        #: Adapter the scan is pinned to; empty means automatic.
+        #: Adapter chosen automatically at startup; empty means the OS decides.
         self._interface_name: str = ""
         #: Pending debounce for the target host count.
         self._preview_job: str | None = None
@@ -360,11 +339,6 @@ class IPInspectorApp(ctk.CTk):
         self._saved_range: str = ""
         #: Scaled logo, held so Tk does not collect it while in use.
         self._logo_photo: tk.PhotoImage | None = None
-        #: Exactly one of the two interface controls exists at a time: tabs
-        #: for an ordinary machine, the dropdown when there are too many.
-        self._interface_tabs: ctk.CTkSegmentedButton | None = None
-        self._interface_menu: ctk.CTkOptionMenu | None = None
-        self._interface_labels: dict[str, str] = {}
         self._sort_key = "ip"
         self._sort_reverse = False
         self._filter = ""
@@ -444,7 +418,7 @@ class IPInspectorApp(ctk.CTk):
             font=ctk.CTkFont(size=11),
         ).pack(anchor="w")
 
-        self._build_interface_selector(header)
+        self._build_link_status(header)
 
         self._language_button = ctk.CTkSegmentedButton(
             header, values=["EN", "ES"], width=98, height=30,
@@ -490,134 +464,45 @@ class IPInspectorApp(ctk.CTk):
         # would leave a white plate around the logo in dark mode.
         return tk.Label(parent, image=photo, bd=0, bg=self.cget("bg"))
 
-    def _build_interface_selector(self, master: ctk.CTkBaseClass) -> None:
+    def _build_link_status(self, master: ctk.CTkBaseClass) -> None:
         """
-        Pin the scan to one network adapter, as tabs in the header.
+        Read-out of the link the scan will use, chosen without the operator.
 
-        A machine with a VPN, a hypervisor and Wi-Fi answers on several
-        subnets at once, and the default interface is rarely the one the
-        operator means. Selecting one also offers its own range, which is
-        the quickest way to stop sweeping the wrong segment.
+        The picker is gone: a machine never asks *which* adapter it is on, it
+        asks what it is connected through. So the adapter is picked here --
+        the first scannable one, which :func:`list_adapters` already orders
+        physical before virtual -- and the header only reports the verdict:
+        Wi-Fi, wired or VPN, plus the subnet it will sweep.
 
-        The adapters become tabs rather than a dropdown: a menu boxed in the
-        middle of the header cut the window in two, and the choice is one
-        click either way.
+        Nothing is lost by the automation. The name is still stored in
+        ``_interface_name``, so the ARP sweep pins itself to this adapter and
+        the range caption describes the same segment it always did; the only
+        difference is that no click is spent on it.
         """
         self._adapters: list[NetworkAdapter] = list_adapters()
-        # Only adapters that can host a sweep of their own get a tab. A
-        # developer machine lists a dozen disconnected bridges and virtual
-        # switches, and none of them is ever the one being asked for.
-        usable = [adapter for adapter in self._adapters if adapter.is_scannable]
-        if len(usable) < MAX_INTERFACE_TABS:
-            self._build_interface_tabs(master, usable)
-        else:
-            self._build_interface_menu(master)
+        adapter = next((a for a in self._adapters if a.is_scannable), None)
+        # With no usable adapter the name stays empty, which is exactly the
+        # "let the OS decide" path the old automatic option used to select.
+        self._interface_name = adapter.name if adapter else ""
 
-    def _build_interface_tabs(
-        self, master: ctk.CTkBaseClass, adapters: list[NetworkAdapter]
-    ) -> None:
-        """One tab per usable adapter, plus automatic, in a single row."""
-        self._interface_labels: dict[str, str] = {i18n.t("iface.auto.short"): ""}
-        for adapter in adapters:
-            label = self._tab_label(adapter)
-            if label in self._interface_labels:      # two NICs, one short name
-                label = f"{label} {adapter.address.rsplit('.', 1)[-1]}"
-            self._interface_labels[label] = adapter.name
-
-        self._interface_tabs = ctk.CTkSegmentedButton(
-            master, values=list(self._interface_labels), height=30,
-            font=ctk.CTkFont(size=11), command=self._on_interface_change,
-        )
-        palette = theme.current()
-        self._interface_tabs.configure(
-            selected_color=palette.primary,
-            selected_hover_color=palette.primary_hover,
-            unselected_color=palette.surface,
-            unselected_hover_color=palette.selection,
-            text_color=palette.text_primary,
-        )
-        # A language switch rebuilds the header, so the choice is reapplied
-        # from the stored name rather than from the widget that is gone.
-        self._interface_tabs.set(
-            self._tab_label_for(self._interface_name)
-            or i18n.t("iface.auto.short"))
-        self._interface_tabs.grid(row=0, column=2, sticky="e", padx=(10, 0))
-
-    def _build_interface_menu(self, master: ctk.CTkBaseClass) -> None:
-        """
-        Dropdown fallback for a machine with more adapters than tabs fit.
-
-        It still lists every adapter, marked with why the unusable ones
-        cannot host a sweep, which is what makes a missing entry explicable.
-        """
         block = ctk.CTkFrame(master, fg_color="transparent")
-        block.grid(row=0, column=2, sticky="e")
-        theme.caption(block, i18n.t("iface.caption")).grid(row=0, column=0, sticky="e")
-
-        labels = [i18n.t("iface.auto")] + [
-            self._adapter_label(adapter) for adapter in self._adapters
-        ]
-        self._interface_menu = self._option_menu(block, labels, 300, anchor="e")
-        self._interface_menu.set(self._label_for(self._interface_name) or labels[0])
-        self._interface_menu.configure(command=self._on_interface_change)
-        self._interface_menu.grid(row=1, column=0, sticky="e", pady=(2, 0))
-
-    def _tab_label(self, adapter: NetworkAdapter) -> str:
-        """Short name for a tab: the adapter name, trimmed to fit."""
-        name = adapter.name.strip()
-        if len(name) <= TAB_NAME_WIDTH:
-            return name
-        return name[: TAB_NAME_WIDTH - 1].rstrip() + "…"
-
-    def _tab_label_for(self, name: str) -> str:
-        """Tab label of one adapter, or "" when it is not on offer."""
-        return next((label for label, adapter in self._interface_labels.items()
-                     if adapter == name), "")
-
-    def _label_for(self, name: str) -> str:
-        """Dropdown label of one adapter, or an empty string when it is gone."""
-        return next((self._adapter_label(a) for a in self._adapters
-                     if a.name == name), "")
-
-    def _adapter_label(self, adapter: NetworkAdapter) -> str:
-        """One line for the dropdown: name, address and what it is."""
-        marks = []
-        if adapter.is_virtual:
-            marks.append(i18n.t("iface.virtual"))
-        if not adapter.is_up:
-            marks.append(i18n.t("iface.down"))
-        suffix = f"  [{', '.join(marks)}]" if marks else ""
-        return adapter.label + suffix
+        block.grid(row=0, column=2, sticky="e", padx=(10, 0))
+        if adapter is None:
+            return
+        kind = link_kind(adapter)
+        theme.caption(block, i18n.t(f"link.{kind}")).grid(
+            row=0, column=0, sticky="e")
+        ctk.CTkLabel(
+            block,
+            text=adapter.network or adapter.address,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=(theme.vpn() if kind == "vpn"
+                        else theme.current().primary),
+        ).grid(row=1, column=0, sticky="e", pady=(2, 0))
 
     def _selected_interface(self) -> str:
-        """Adapter name chosen in the dropdown, or empty for automatic."""
+        """Adapter chosen automatically at startup, or empty for the OS."""
         return self._interface_name
-
-    def _on_interface_change(self, _value: str = "") -> None:
-        """Pin the scan to the chosen adapter and offer its own range."""
-        if self._interface_tabs is not None:
-            self._interface_name = self._interface_labels.get(
-                self._interface_tabs.get(), "")
-        else:
-            chosen = self._interface_menu.get()
-            self._interface_name = next(
-                (a.name for a in self._adapters
-                 if self._adapter_label(a) == chosen), "")
-
-        if not self._interface_name:
-            self._set_range(local_network_hint())
-            return
-
-        adapter = find_adapter(self._interface_name)
-        if adapter is None:
-            self._set_phase(i18n.t("iface.gone", name=self._interface_name))
-            return
-        if not adapter.is_scannable:
-            self._set_phase(i18n.t("iface.unusable", name=adapter.name))
-            return
-        self._set_range(local_network_hint(self._interface_name))
-        self._set_phase(i18n.t("iface.selected", name=adapter.name,
-                               network=adapter.sweep_range or adapter.address))
 
     def _build_tabs(self) -> None:
         # The tab strip sits on row 1 and takes the whole flexible band, so the
@@ -711,7 +596,6 @@ class IPInspectorApp(ctk.CTk):
             "tab.audit": self._build_audit_tab,
             "tab.tools": self._build_tools_tab,
             "tab.quick": self._build_quick_tab,
-            "tab.inventory": self._build_inventory_tab,
             "tab.monitor": self._build_monitor_tab,
         }[key](tab)
 
@@ -1068,8 +952,7 @@ class IPInspectorApp(ctk.CTk):
             # system the fingerprint deduced, and the table and the export
             # must not disagree about the same device.
             device.model_label,
-            (i18n.t("value.vpn") if device.is_vpn_active else "-")
-            + (" *" if device.is_new_device else ""),
+            (i18n.t("value.vpn") if device.is_vpn_active else "-"),
             device.ttl_label,
             device.latency_label,
             device.discovery_method or "-",
@@ -1321,12 +1204,11 @@ class IPInspectorApp(ctk.CTk):
             summary = ""
         return {
             "target_range": self._range_entry.get().strip(),
-            "inventory_changes": self._scanner.inventory_changes,
             "vpn_summary": summary,
         }
 
     def _on_report(self) -> None:
-        """Export the full inventory as a corporate PDF."""
+        """Export the scan as a corporate PDF."""
         if not self._devices:
             self._set_phase(i18n.t("hint.scanfirst"))
             return
@@ -1341,7 +1223,7 @@ class IPInspectorApp(ctk.CTk):
         self._export_report(path, "pdf")
 
     def _on_report_html(self) -> None:
-        """Export the same inventory as a self-contained HTML file."""
+        """Export the same report as a self-contained HTML file."""
         if not self._devices:
             self._set_phase(i18n.t("hint.scanfirst"))
             return
@@ -1603,162 +1485,6 @@ class IPInspectorApp(ctk.CTk):
             dot=0,
         )
         self._finding_table.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
-
-    def _build_inventory_tab(self, parent: ctk.CTkBaseClass) -> None:
-        parent.grid_columnconfigure(0, weight=1)
-        parent.grid_rowconfigure(2, weight=1)
-
-        bar = theme.panel(parent)
-        bar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        actions = ctk.CTkFrame(bar, fg_color="transparent")
-        actions.grid(row=0, column=0, sticky="w", padx=(10, 6), pady=7)
-        for label, command, width in (
-            (i18n.t("inv.approve"), self._on_approve, 150),
-            (i18n.t("inv.forget"), self._on_forget, 150),
-            (i18n.t("inv.reset"), self._on_reset_inventory, 140),
-            (i18n.t("inv.export"), self._on_export_inventory, 140),
-        ):
-            theme.secondary_button(actions, label, command, width).grid(
-                row=0, column=len(actions.grid_slaves()), padx=3
-            )
-
-        self._inventory_label = ctk.CTkLabel(
-            parent, text="", anchor="w", font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=theme.current().text_primary,
-        )
-        self._inventory_label.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 4))
-
-        panel = theme.panel(parent)
-        panel.grid(row=2, column=0, sticky="nsew")
-        panel.grid_columnconfigure(0, weight=1)
-        panel.grid_rowconfigure(0, weight=1)
-
-        self._inventory_table = theme.ResultTable(
-            panel,
-            tuple((i18n.t(k), w, a, m, s) for k, w, a, m, s in INVENTORY_COLUMNS),
-        )
-        self._inventory_table.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
-        self._render_inventory([])
-
-
-
-    def _render_inventory(self, changes) -> None:
-        """Paint the inventory diff, most urgent changes first."""
-        rows = []
-        for change in changes:
-            label = {
-                "new": i18n.t("inv.new"),
-                "identity": i18n.t("inv.identity"),
-                "vendor": i18n.t("inv.vendor"),
-                "missing": i18n.t("inv.missing"),
-                "returning": i18n.t("inv.returning"),
-            }.get(change.kind, change.kind.upper())
-            colour = {
-                "identity": theme.warning(),
-                "vendor": theme.vpn(),
-                "new": theme.vpn(),
-                "missing": theme.current().text_secondary,
-                "returning": theme.current().text_secondary,
-            }.get(change.kind, theme.current().text_secondary)
-            rows.append((
-                change.mac or change.ip,
-                [
-                    label,
-                    change.mac or "-",
-                    change.ip or "-",
-                    change.detail,
-                    change.vendor or "-",
-                    i18n.device_type_label(change.device_type),
-                    (change.first_seen or "-")[:19],
-                ],
-                colour,
-            ))
-        self._inventory_table.rebuild(rows)
-
-        counts = {}
-        for change in changes:
-            counts[change.kind] = counts.get(change.kind, 0) + 1
-        summary = i18n.t(
-            "inv.summary",
-            new=counts.get("new", 0),
-            changed=counts.get("identity", 0) + counts.get("vendor", 0),
-            missing=counts.get("missing", 0),
-            total=self._scanner.inventory.__len__(),
-        )
-        self._inventory_label.configure(
-            text=summary,
-            text_color=(theme.warning() if counts.get("identity")
-                        else theme.current().text_primary),
-        )
-
-    def _on_approve(self) -> None:
-        """Mark the selected device as approved."""
-        key = self._inventory_table.selected_key()
-        if not key:
-            self._set_phase(i18n.t("hint.tool"))
-            return
-        self._scanner.inventory.approve(key)
-        self._set_phase(i18n.t("inv.approved", mac=key))
-
-    def _on_forget(self) -> None:
-        """Drop the selected device from the baseline."""
-        key = self._inventory_table.selected_key()
-        if not key:
-            self._set_phase(i18n.t("hint.tool"))
-            return
-        self._scanner.inventory.forget(key)
-        self._set_phase(i18n.t("inv.forgotten", mac=key))
-
-    def _on_reset_inventory(self) -> None:
-        """Clear the whole baseline after confirmation."""
-        if not messagebox.askyesno(
-            i18n.t("tab.inventory"), i18n.t("inv.reset.ask")
-        ):
-            return
-        self._scanner.inventory.reset()
-        self._render_inventory([])
-        self._set_phase(i18n.t("inv.reset.done"))
-
-    def _on_export_inventory(self) -> None:
-        """Write the current diff to a CSV file."""
-        path = filedialog.asksaveasfilename(
-            title=i18n.t("inv.export"),
-            initialfile="inventory_changes.csv",
-            defaultextension=".csv",
-            filetypes=[("CSV", "*.csv"), ("JSON", "*.json")],
-        )
-        if not path:
-            return
-        changes = self._scanner.inventory_changes
-        try:
-            if path.lower().endswith(".json"):
-                with open(path, "w", encoding="utf-8") as handle:
-                    json.dump(
-                        [
-                            {
-                                "kind": c.kind, "severity": c.severity,
-                                "mac": c.mac, "ip": c.ip, "detail": c.detail,
-                                "vendor": c.vendor, "type": c.device_type,
-                            }
-                            for c in changes
-                        ],
-                        handle, indent=2, ensure_ascii=False,
-                    )
-            else:
-                with open(path, "w", newline="", encoding="utf-8-sig") as handle:
-                    writer = csv.writer(handle, delimiter=";")
-                    writer.writerow(["kind", "severity", "mac", "ip",
-                                     "detail", "vendor", "type"])
-                    for change in changes:
-                        writer.writerow([
-                            change.kind, change.severity, change.mac, change.ip,
-                            change.detail, change.vendor, change.device_type,
-                        ])
-        except OSError as exc:
-            messagebox.showerror(i18n.t("inv.export"), str(exc))
-            return
-        self._set_phase(i18n.t("inv.saved", path=Path(path).name))
-
 
     def _build_monitor_tab(self, parent: ctk.CTkBaseClass) -> None:
         parent.grid_columnconfigure(0, weight=1)
@@ -3097,7 +2823,7 @@ class IPInspectorApp(ctk.CTk):
 
     def _on_export_data(self, suffix: str) -> None:
         """
-        Write the whole visible inventory to CSV or JSON.
+        Write every visible device to CSV or JSON.
 
         What the operator sees is what gets written: a filtered table exports
         the filtered set, which is the point of filtering by "HP" before
@@ -3241,7 +2967,7 @@ class IPInspectorApp(ctk.CTk):
         """
         Rebuild the chrome so a language change is reflected everywhere.
 
-        Scan results live in ``self._devices``, so the inventory survives
+        Scan results live in ``self._devices``, so they survive
         the rebuild; only the widgets are recreated. ``tab`` restores the tab
         the operator was looking at, which the rebuild would otherwise reset
         to the first one.
