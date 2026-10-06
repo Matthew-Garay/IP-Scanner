@@ -65,8 +65,6 @@ def device_to_dict(device: Device) -> dict:
         "latency_ms": device.response_time_ms,
         "discovery": device.discovery_method,
         "risk_score": device.risk_score,
-        "inventory_state": device.inventory_state,
-        "first_seen": device.first_seen,
         "ports": [
             {
                 "number": port.number,
@@ -94,9 +92,9 @@ def export_json(
     devices: Iterable[Device], path: str | Path, extra: dict | None = None
 ) -> Path:
     """
-    Write the full inventory as JSON and return the path written.
+    Write every device as JSON and return the path written.
 
-    ``extra`` carries the session context (scanned range, inventory changes),
+    ``extra`` carries the session context (scanned range, VPN posture),
     so the file documents how the data was obtained and not only what it found.
     """
     target = _target(path, ".json")

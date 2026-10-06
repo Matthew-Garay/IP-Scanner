@@ -96,9 +96,6 @@ class Device:
     # Secondary evidence used for classification and reporting.
     is_alive: bool = True
     risk_score: int = 0
-    #: Inventory verdict: new, known, returning or blank.
-    inventory_state: str = ""
-    first_seen: str = ""
     ttl: int | None = None
     #: TCP window advertised in the SYN-ACK, when raw sockets allowed a look.
     tcp_window: int | None = None
@@ -129,11 +126,6 @@ class Device:
     def latency_label(self) -> str:
         """Round-trip time in milliseconds, as shown in the table."""
         return f"{self.response_time_ms:.0f}" if self.response_time_ms else "-"
-
-    @property
-    def is_new_device(self) -> bool:
-        """True when the inventory flagged this device as never seen before."""
-        return self.inventory_state == "new"
 
     @property
     def ttl_label(self) -> str:

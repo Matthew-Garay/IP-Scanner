@@ -74,50 +74,52 @@ class Palette:
     state_idle: str
 
 
-#: Corporate light scheme. The page is a clear grey-blue and every panel,
-#: field and card is white, so an input always reads as something you can
-#: type in. Status colours are dark enough to carry text on white.
+#: Corporate light scheme, saturated on purpose. The blue is a real blue
+#: rather than the washed-out corporate tint it replaced, and the table
+#: header is a coloured slab: it is the one place where a band of colour
+#: earns its keep, because it marks the top of the grid at a glance and
+#: makes the columns read as columns.
 LIGHT = Palette(
-    primary="#0B64C8",
-    primary_hover="#0A57AB",
-    primary_active="#084A90",
-    accent="#084A90",
-    accent_hover="#063C74",
+    primary="#0A5BD0",
+    primary_hover="#0849AC",
+    primary_active="#063B8C",
+    accent="#0A5BD0",
+    accent_hover="#0849AC",
     accent_text="#FFFFFF",
-    # Soft neutral greys instead of a tinted blue-grey: the window is a work
-    # surface, and the chrome must recede so the table carries the screen.
-    background="#F3F4F6",
+    # A page with a faint blue cast, so white panels sit *on* it instead of
+    # disappearing into it. Still light enough to keep the table the focus.
+    background="#EEF3FB",
     surface="#FFFFFF",
-    surface_alt="#F9FAFB",
-    hover="#EFF3F8",
-    text_primary="#1F2933",
-    text_secondary="#55606E",
-    text_muted="#7A8494",
-    # The header is a light bar, not a coloured slab. A dark blue strip would
-    # read as a separate application stacked on top of the grid below it.
-    header_bg="#FFFFFF",
-    header_text="#55606E",
+    surface_alt="#F6F9FE",
+    hover="#E3EDFC",
+    text_primary="#16233A",
+    text_secondary="#46566F",
+    text_muted="#6F7E96",
+    # The coloured header band. White text on the saturated primary, which
+    # clears 4.5:1 comfortably at the 10-11px the headers are drawn at.
+    header_bg="#0A5BD0",
+    header_text="#FFFFFF",
     row_even="#FFFFFF",
-    row_odd="#FAFAFA",
+    row_odd="#F4F8FE",
     # Hairline between rows. Structure comes from one faint line rather than
     # from borders around every cell, which is what a spreadsheet shows.
-    grid_line="#E6E8EB",
-    selection="#DCE9F7",
-    selection_text="#123A5C",
-    border="#D3D8DF",
+    grid_line="#DCE4F0",
+    selection="#CBE0FF",
+    selection_text="#063B8C",
+    border="#C3CFE0",
     field="#FFFFFF",
-    field_border="#C7CDD6",
-    field_focus="#0B64C8",
-    chip="#F1F3F6",
-    chip_text="#3A4553",
+    field_border="#AEBDD2",
+    field_focus="#0A5BD0",
+    chip="#E3EDFC",
+    chip_text="#1F3C66",
     input_bg="#FFFFFF",
-    online="#16A34A",
-    vpn="#B45309",
-    warning="#C0392B",
-    state_ok="#16A34A",
-    state_warn="#B45309",
-    state_off="#C0392B",
-    state_idle="#6B7684",
+    online="#0F9D58",
+    vpn="#E0870B",
+    warning="#D93025",
+    state_ok="#0F9D58",
+    state_warn="#E0870B",
+    state_off="#D93025",
+    state_idle="#64748B",
 )
 
 #: Dark scheme: slate rather than pure black, with the page darker than the
@@ -779,7 +781,14 @@ class ResultTable(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
-        header = ctk.CTkFrame(self, fg_color="transparent", corner_radius=0)
+        # The header band. It used to be transparent with grey captions,
+        # which left the grid without a visible top: the columns read as one
+        # long list rather than as a table. The slab is painted here and
+        # re-read in ``refresh`` so an appearance switch repaints it too.
+        palette = current()
+        header = ctk.CTkFrame(
+            self, fg_color=palette.header_bg, corner_radius=0
+        )
         header.grid(row=0, column=0, sticky="ew")
         header.grid_columnconfigure(0, weight=1)
         self._header = header
@@ -806,7 +815,7 @@ class ResultTable(ctk.CTkFrame):
             button = ctk.CTkButton(
                 holder, text=label.upper(), width=width, height=26,
                 corner_radius=3, fg_color="transparent", hover_color=None,
-                text_color=("gray35", "gray62"),
+                text_color=palette.header_text,
                 font=("Segoe UI", self.HEADER_FONT_SIZE, "bold"), anchor=anchor,
                 command=(lambda i: self._on_sort(i)) if self._on_sort else None,
             )
@@ -857,12 +866,15 @@ class ResultTable(ctk.CTkFrame):
     def refresh(self) -> None:
         """Re-apply palette colours to header and existing rows."""
         pal = current()
+        # The band itself, then the captions on it: both were painted with
+        # the palette in force when the table was built.
+        self._header.configure(fg_color=pal.header_bg)
         for index in range(len(self._columns)):
             # The caption now sits on a button inside a fixed-width holder, so
             # the widget that carries the colour is one level down.
             holder = self._header.grid_slaves(row=0, column=index)[0]
             for button in holder.grid_slaves(row=0, column=0):
-                button.configure(text_color=pal.text_secondary)
+                button.configure(text_color=pal.header_text)
         self._restyle_all()
 
     def _restyle_all(self) -> None:

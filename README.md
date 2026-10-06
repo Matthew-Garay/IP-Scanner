@@ -11,9 +11,9 @@ Funciona sin conexion una vez instalado y no manda nada a ningun lado. Lo hice p
 
 ## Que trae
 
-La app tiene seis pestanas en una sola ventana. *Network Scan* es lo principal: descubre los equipos y sondea los puertos TCP del 1 al 1024 (siempre los mismos, para que dos escaneos se puedan comparar). Tambien toma las IPs de la VPN del equipo, no solo la tarjeta fisica.
+La app tiene cinco pestanas en una sola ventana. *Network Scan* es lo principal: descubre los equipos y sondea los puertos TCP del 1 al 1024 (siempre los mismos, para que dos escaneos se puedan comparar). La tarjeta de red por la que sale el escaneo se detecta sola: la cabecera indica si es Wi-Fi, cable o tunel VPN y que subred se va a barrer.
 
-*Security Audit* revisa TLS y HTTP de cada equipo y le da una puntuacion de riesgo. *Tools* y *Quick Tools* son utilidades sueltas: DNS, WHOIS, traceroute, calculo de subredes, grafica de latencia. *Inventory* guarda lo visto y lo compara con una linea base para notar si algo aparecio o se fue, y *Monitor* revisa cada pocos minutos si los equipos siguen respondiendo.
+*Security Audit* revisa TLS y HTTP de cada equipo y le da una puntuacion de riesgo. *Tools* y *Quick Tools* son utilidades sueltas: DNS, WHOIS, traceroute, calculo de subredes, grafica de latencia. *Monitor* revisa cada pocos minutos si los equipos siguen respondiendo.
 
 La interfaz esta en ingles y espanol, se cambia en caliente, y los informes PDF y HTML salen en el idioma activo.
 

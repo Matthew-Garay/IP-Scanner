@@ -260,15 +260,13 @@ def build_pdf(
     path: str | Path,
     *,
     target_range: str = "",
-    inventory_changes: list | None = None,
     vpn_summary: str = "",
 ) -> Path:
     """
-    Render a corporate network inventory report to PDF.
+    Render a corporate network report to PDF.
 
     Layout: cover band, KPI strip, device table with zebra rows and
-    repeated headers on every page, then an optional inventory
-    (unauthorised device) section.
+    repeated headers on every page.
     """
     from ..interface.theme import current
 
@@ -306,12 +304,15 @@ def build_pdf(
     y -= 12
     with_ports = sum(1 for d in devices if d.open_ports)
     vpn_devices = sum(1 for d in devices if d.is_vpn_active)
-    new_devices = sum(1 for d in devices if d.is_new_device)
+    # "At risk" counts what the risk engine scored, not what an inventory
+    # baseline used to flag: with no baseline there is no "new device" to
+    # count, and the caption always promised a risk figure anyway.
+    at_risk = sum(1 for d in devices if d.risk_score >= 15)
     tiles = (
         (len(devices), i18n.t("kpi.devices")),
         (with_ports, i18n.t("kpi.ports")),
         (vpn_devices, i18n.t("kpi.vpn")),
-        (new_devices, i18n.t("kpi.risk")),
+        (at_risk, i18n.t("kpi.risk")),
     )
     tile_width = (PAGE_WIDTH - MARGIN_X * 2) / len(tiles)
     for index, (value, caption) in enumerate(tiles):
@@ -325,17 +326,6 @@ def build_pdf(
     writer.text(MARGIN_X, y, i18n.t("report.inventory"), HELVETICA_BOLD, 12, *ink)
     y -= 8
     y = _draw_table(writer, devices, y, brand, zebra, ink, soft)
-
-    # -- inventory drift -------------------------------------------------
-    changes = inventory_changes or []
-    if changes:
-        y -= 18
-        if y < MARGIN_TOP + 140:
-            writer.new_page()
-            y = PAGE_HEIGHT - MARGIN_TOP
-        writer.text(MARGIN_X, y, i18n.t("report.changes"), HELVETICA_BOLD, 12, *ink)
-        y -= 16
-        y = _draw_changes(writer, changes, y, brand, zebra, ink, soft)
 
     # -- footer on every page --------------------------------------------
     for page in writer._pages:
@@ -411,64 +401,6 @@ def _draw_table(writer, devices, y, brand, zebra, ink, soft) -> float:
     writer.rule(MARGIN_X, y + 4, width, *RULE)
     return y
 
-#: Inventory drift columns: (header, width, alignment).
-_CHANGE_COLUMNS = (
-    ("Cambio", 62, "l"),
-    ("MAC", 92, "l"),
-    ("IP", 78, "l"),
-    ("Detalle", 210, "l"),
-)
-
-_SEVERITY_RGB = {
-    "critical": (0.85, 0.20, 0.20),
-    "high": (0.90, 0.32, 0.12),
-    "medium": (0.90, 0.49, 0.13),
-    "low": (0.45, 0.60, 0.70),
-    "info": (0.55, 0.58, 0.60),
-}
-
-
-def _draw_changes(writer, changes, y, brand, zebra, ink, soft) -> float:
-    """Draw the unauthorised / drift section."""
-    total = sum(c[1] for c in _CHANGE_COLUMNS)
-    width = PAGE_WIDTH - MARGIN_X * 2
-    row_height = 15
-
-    def header(at: float) -> float:
-        writer.rect(MARGIN_X, at - 12, width, row_height, *brand)
-        offset = MARGIN_X
-        for title, col_width, _align in _CHANGE_COLUMNS:
-            writer.text(offset + 4, at - 6, title.upper(), HELVETICA_BOLD, 7, 1.0)
-            offset += col_width * width / total
-        return at - row_height
-
-    y = header(y)
-    for position, change in enumerate(changes):
-        if y < MARGIN_TOP + 24:
-            writer.new_page()
-            y = header(PAGE_HEIGHT - MARGIN_TOP)
-        if position % 2 == 0:
-            writer.rect(MARGIN_X, y - 12, width, row_height, *zebra)
-
-        rgb = _SEVERITY_RGB.get(change.severity, soft)
-        cells = (
-            change.kind.upper(),
-            change.mac or "-",
-            change.ip or "-",
-            change.detail,
-        )
-        offset = MARGIN_X
-        for index, value in enumerate(cells):
-            title, col_width, _align = _CHANGE_COLUMNS[index]
-            font = COURIER if index in (1, 2) else HELVETICA
-            colour = rgb if index == 0 else ink
-            writer.text(offset + 4, y - 6,
-                        _fit(value, col_width * width / total, index in (1, 2)),
-                        font, 8, *colour)
-            offset += col_width * width / total
-        y -= row_height
-    return y
-
 
 # ---------------------------------------------------------------------------
 # HTML report
@@ -515,7 +447,6 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 <th>Vendor</th><th>Model</th><th>Type</th><th>VPN</th><th>Ports</th></tr></thead>
 <tbody>{device_rows}</tbody>
 </table>
-{changes_block}
 </body>
 </html>
 """
@@ -526,10 +457,9 @@ def build_html(
     path: str | Path,
     *,
     target_range: str = "",
-    inventory_changes: list | None = None,
     vpn_summary: str = "",
 ) -> Path:
-    """Render the same inventory as a self-contained, print-ready HTML file."""
+    """Render the same report as a self-contained, print-ready HTML file."""
     from ..interface.theme import current
 
     pal = current()
@@ -560,38 +490,16 @@ def build_html(
 
     with_ports = sum(1 for d in devices if d.open_ports)
     vpn_devices = sum(1 for d in devices if d.is_vpn_active)
-    new_devices = sum(1 for d in devices if d.is_new_device)
+    at_risk = sum(1 for d in devices if d.risk_score >= 15)
     kpis = "".join(
         f'<div class="kpi"><b>{value}</b><span>{esc(caption)}</span></div>'
         for value, caption in (
             (len(devices), i18n.t("kpi.devices")),
             (with_ports, i18n.t("kpi.ports")),
             (vpn_devices, i18n.t("kpi.vpn")),
-            (new_devices, i18n.t("kpi.risk")),
+            (at_risk, i18n.t("kpi.risk")),
         )
     )
-
-    changes_block = ""
-    changes = inventory_changes or []
-    if changes:
-        change_rows = "".join(
-            "<tr>"
-            f'<td style="color:{_css_severity(c.severity)};font-weight:600">'
-            f"{esc(c.kind.upper())}</td>"
-            f'<td class="mono">{esc(c.mac or "-")}</td>'
-            f'<td class="mono">{esc(c.ip or "-")}</td>'
-            f"<td>{esc(c.detail)}</td>"
-            f"<td>{esc(c.vendor or '-')}</td>"
-            "</tr>"
-            for c in changes
-        )
-        changes_block = (
-            f"<h2>{esc(i18n.t('report.changes'))}</h2><table><thead><tr>"
-            f"<th>{esc(i18n.t('inv.new'))}</th><th>{esc(i18n.t('inv.mac'))}</th>"
-            f"<th>{esc(i18n.t('col.ip'))}</th><th>{esc(i18n.t('inv.detail'))}</th>"
-            f"<th>{esc(i18n.t('inv.vendorcol'))}</th></tr></thead>"
-            f"<tbody>{change_rows}</tbody></table>"
-        )
 
     document = _HTML_TEMPLATE.format(
         lang=i18n.get_language(),
@@ -605,7 +513,6 @@ def build_html(
         kpis=kpis,
         inventory_title=esc(i18n.t("report.inventory")),
         device_rows="".join(rows) or "<tr><td colspan=9>-</td></tr>",
-        changes_block=changes_block,
         bg=pal.background, surface=pal.surface, fg=pal.text_primary,
         muted=pal.text_secondary, border=pal.border, primary=pal.header_bg,
         zebra=pal.row_odd, online=pal.online, vpn=pal.vpn,
