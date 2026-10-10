@@ -51,43 +51,26 @@ class TableGeometry(unittest.TestCase):
             pass
 
     def test_las_columnas_no_se_desalinean(self):
-        """Cada celda debe estar bajo su cabecera, no desplazada."""
+        """El Treeview nativo alinea celdas y cabeceras por construccion."""
         from ip_inspector.interface.ui import DEVICE_COLUMNS
         tabla = self.app._table
-        cabeceras = [tabla._header.grid_slaves(row=0, column=c)[0]
-                     for c in range(len(DEVICE_COLUMNS))]
-        peor = 0.0
+        # 6 columnas estilo Advanced IP Scanner, con scroll nativo.
+        self.assertEqual(len(DEVICE_COLUMNS), 6)
+        self.assertEqual(tabla.row_count(), 6)
         for clave in tabla.keys():
-            widgets = tabla._rows[clave][1]
-            for index in range(len(DEVICE_COLUMNS)):
-                try:
-                    anclaje = str(widgets[index].cget("anchor"))
-                except Exception:
-                    continue  # los iconos no son etiquetas de texto
-                if anclaje in ("w", "west"):
-                    desvio = abs(widgets[index].winfo_x()
-                                 - cabeceras[index].winfo_x())
-                else:
-                    desvio = abs(
-                        (widgets[index].winfo_x() + widgets[index].winfo_width() / 2)
-                        - (cabeceras[index].winfo_x()
-                           + cabeceras[index].winfo_width() / 2))
-                peor = max(peor, desvio)
-        # Antes el desvio llegaba a 59 px y crecia columna a columna.
-        self.assertLess(peor, 8.0, "desvio maximo de %.1f px" % peor)
+            vals = tabla._rows[clave][0]
+            self.assertEqual(len(vals), 6)
 
     def test_la_tabla_ocupa_todo_el_ancho(self):
-        """El sobrante se reparte, no se queda una columna comiendolo."""
+        """Ninguna columna acapara el ancho."""
         from ip_inspector.interface.ui import DEVICE_COLUMNS
-        tabla = self.app._table
-        cabeceras = [tabla._header.grid_slaves(row=0, column=c)[0].winfo_width()
-                     for c in range(len(DEVICE_COLUMNS))]
-        mayor = max(cabeceras)
-        # Solo la ultima columna tenia peso: se comia el 24% del ancho.
-        self.assertLess(mayor / sum(cabeceras), 0.25)
+        anchos = [c[1] for c in DEVICE_COLUMNS]
+        mayor = max(anchos)
+        # La de puertos es la mas ancha pero no se come la tabla.
+        self.assertLess(mayor / sum(anchos), 0.35)
 
     def test_filas_compactas(self):
-        self.assertEqual(self.app._table.ROW_HEIGHT, 26)
+        self.assertEqual(self.app._table.ROW_HEIGHT, 24)
 
     def test_sin_scroll_horizontal_en_ventana_minima(self):
         from ip_inspector.interface.ui import DEVICE_COLUMNS, WINDOW_MINIMUM

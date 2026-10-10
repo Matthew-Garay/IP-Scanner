@@ -26,7 +26,7 @@ git clone https://github.com/Matthew-Garay/IP-Scanner.git
 cd IP-Scanner
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -r ip_inspector\requirements.txt
+pip install -r requirements.txt
 ```
 
 Las dependencias son `customtkinter`, `scapy`, `psutil` y `mac-vendor-lookup`. Esta ultima descarga la lista de fabricantes de MAC en el primer arranque y despues trabaja sin conexion. `netifaces` no esta porque no publica paquetes para Python 3.13 y con `psutil` basta.
@@ -55,7 +55,7 @@ Cada prueba existe porque ese bug ya salio antes y no quiero que vuelva.
 
 ```powershell
 pip install pyinstaller
-pyinstaller ip_inspector\IP_Inspector.spec
+pyinstaller IP_Inspector.spec
 ```
 
 El `.spec` apunta a `ip_inspector/launcher.py` y no a `main.py` a proposito: PyInstaller no sigue la importacion relativa (`from .interface.ui import ...`), empaqueta `main.py` solo y el ejecutable arranca vacio. Con `launcher.py` la importacion es absoluta y el analizador ve todo el paquete. Sale como `dist/IP_Inspector.exe`.
