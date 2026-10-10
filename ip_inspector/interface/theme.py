@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import tkinter as tk
+from tkinter import ttk
 
 import customtkinter as ctk
 
@@ -778,6 +779,12 @@ class ResultTable(ctk.CTkFrame):
 
     # -- construction ----------------------------------------------------
     def _build(self) -> None:
+        # Never let the table shrink below its own declared columns, and never
+        # let the body collapse its rows to a single line. A non-propagating
+        # window keeps the declared geometry; a propagating one lets Tk figure
+        # out its size from the children and, on a narrow parent, it always
+        # prefers to scroll.
+        self.grid_propagate(False)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
@@ -833,9 +840,8 @@ class ResultTable(ctk.CTkFrame):
             row=0, column=len(self._columns), sticky="nsew")
         header.grid_columnconfigure(len(self._columns), weight=0)
 
-        self._body = ctk.CTkScrollableFrame(
+        self._body = ctk.CTkFrame(
             self, fg_color="transparent", corner_radius=0,
-            scrollbar_button_color=("gray70", "gray35"),
         )
         self._body.grid(row=1, column=0, sticky="nsew")
         # The body holds one row per entry, not the data cells themselves, so
@@ -844,11 +850,17 @@ class ResultTable(ctk.CTkFrame):
         # as the header does. Reserving minsizes here instead would squeeze
         # the rows and slide every cell out of place.
         self._body.grid_columnconfigure(0, weight=1)
+        self._body.grid_rowconfigure(0, weight=1)
         self._sync_gutter()
         self.bind("<Configure>", self._on_resize)
 
     def _sync_gutter(self) -> None:
-        """Match the header's gutter to the scrollbar's real width."""
+        """Match the header's gutter to the scrollbar's real width.
+
+        The body is no longer scrollable, so this is a no-op unless a caller
+        still wires a real scrollbar into it. A zero-width gutter is the safe
+        default: it never pushes columns left of their headings.
+        """
         scrollbar = getattr(self._body, "_scrollbar", None)
         if scrollbar is None or self._scrollbar_gutter is None:
             return
@@ -1118,4 +1130,56 @@ class ResultTable(ctk.CTkFrame):
         return self._selected
 
     def bind_context_menu(self, callback) -> None:
-        self._body.bind("<Button-3>", callback)
+        try:
+            self._body.bind("<Button-3>", callback)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Fast virtualized table — Advanced-IP-Scanner style
+# ---------------------------------------------------------------------------
+
+#: Row height for the fast table (px): compact, ~28 rows visible.
+FAST_ROW_HEIGHT = 24
+
+
+class FastTable(ctk.CTkFrame):
+    """Results grid backed by one ttk.Treeview (virtualized, native scroll).
+
+    The legacy ResultTable builds 1 frame + N labels per row (16 cols ->
+    ~17 widgets per host). A /24 sweep meant thousands of live widgets and
+    the window froze. This one keeps a single native widget that only draws
+    visible rows: 254 hosts cost the same as 20.
+
+    Same constructor shape as ResultTable so ui.py barely changes:
+    ``columns`` = (label, width, anchor, mono, sortkey).
+    ``dot`` = status column index (colours the whole row via tags).
+    ``icon``/``icons``/``sparkline`` are accepted and ignored (compat).
+    """
+
+    ROW_HEIGHT = FAST_ROW_HEIGHT
+    HEADER_FONT_SIZE = 9
+    ROW_FONT_SIZE = 10
+    ROW_FONT_PADDING = 3
+
+    def __init__(self, master, columns, on_sort=None, on_select=None,
+                 sparkline=None, dot=None, icon=None, icons=None):
+        super().__init__(master, fg_color="transparent", corner_radius=4)
+        self._columns = list(columns)
+        self._on_sort = on_sort
+        self._on_select = on_select
+        self._dot = dot
+        self._rows: dict[str, tuple[list[str], str | None]] = {}
+        self._order: list[str] = []
+        self._selected: str | None = None
+        self._build()
+        _TABLES.append(self)
+        self.refresh()
+
+    def destroy(self) -> None:
+        try:
+            _TABLES.remove(self)
+        except ValueError:
+            pass
+        super().destroy()

