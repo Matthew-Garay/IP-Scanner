@@ -1,25 +1,49 @@
-# IP Inspector
+<div align="center">
 
-Aplicacion de escritorio para Windows que escanea la red local: encuentra los dispositivos conectados, revisa que puertos tienen abiertos, identifica modelo y sistema operativo de cada uno y checa si su configuracion es segura.
+# IP Inspector — Escáner de Red y Puertos
 
-Funciona sin conexion una vez instalado y no manda nada a ningun lado. Lo hice para ver que hay en mi propia red sin montar un servidor ni instalar Kali.
+**Aplicación de escritorio para Windows** que escanea la red local, detecta dispositivos, revisa puertos y audita su seguridad.
 
-- Python 3.13 o superior
-- Interfaz con CustomTkinter
+[![Python](https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square)](https://www.python.org/)
+[![CustomTkinter](https://img.shields.io/badge/CustomTkinter-GUI-2ea44f?style=flat-square)](https://customtkinter.tomschimansky.com/)
+[![Windows](https://img.shields.io/badge/Plataforma-Windows-0078D6?style=flat-square)]()
+[![Idiomas](https://img.shields.io/badge/Idiomas-ES%20%7C%20EN-6f42c1?style=flat-square)]()
 
----
-
-## Que trae
-
-La app tiene cinco pestanas en una sola ventana. *Network Scan* es lo principal: descubre los equipos y sondea los puertos TCP del 1 al 1024 (siempre los mismos, para que dos escaneos se puedan comparar). La tarjeta de red por la que sale el escaneo se detecta sola: la cabecera indica si es Wi-Fi, cable o tunel VPN y que subred se va a barrer.
-
-*Security Audit* revisa TLS y HTTP de cada equipo y le da una puntuacion de riesgo. *Tools* y *Quick Tools* son utilidades sueltas: DNS, WHOIS, traceroute, calculo de subredes, grafica de latencia. *Monitor* revisa cada pocos minutos si los equipos siguen respondiendo.
-
-La interfaz esta en ingles y espanol, se cambia en caliente, y los informes PDF y HTML salen en el idioma activo.
+</div>
 
 ---
 
-## Instalacion
+## Descripción
+
+Aplicación de escritorio para Windows que escanea la red local: encuentra los dispositivos conectados, revisa qué **puertos TCP** tienen abiertos, identifica **modelo y sistema operativo** de cada equipo y comprueba si su configuración es segura.
+
+Funciona **sin conexión** una vez instalado y **no envía datos a ningún lado**. Está pensada para saber qué hay en tu propia red sin montar un servidor ni instalar Kali.
+
+La interfaz es estilo **Advanced IP Scanner**: tabla virtualizada de 6 columnas (Estado, IP, Nombre, MAC, Fabricante, Puertos) con modos **Rápido** (27 puertos comunes) y **Completo** (1-1024).
+
+## Características
+
+- **Network Scan (principal):** descubre equipos y sondea los puertos TCP del 1 al 1024 (siempre los mismos, para poder comparar escaneos). Detecta también IPs de la VPN, no solo la tarjeta física.
+- **Security Audit:** revisa TLS y HTTP de cada equipo y asigna una puntuación de riesgo.
+- **Tools y Quick Tools:** DNS, WHOIS, traceroute, cálculo de subredes y gráfica de latencia.
+- **Inventory:** guarda lo visto y lo compara con una línea base para detectar equipos que aparecen o desaparecen.
+- **Monitor:** revisa periódicamente si los equipos siguen respondiendo.
+- **Interfaz bilingüe** (español/inglés) con cambio en caliente; informes PDF y HTML en el idioma activo.
+
+## Tecnologías utilizadas
+
+- **Lenguaje:** Python 3.13+
+- **GUI:** CustomTkinter
+- **Red:** scapy, psutil, mac-vendor-lookup (lista OUI de fabricantes, se descarga y cachea en el primer uso)
+- **Empaquetado:** PyInstaller (`IP_Inspector.spec`)
+
+## Requisitos previos
+
+- **Windows** (la app está diseñada para escritorio Windows).
+- **Python 3.13 o superior.**
+- Permisos de **administrador** para el sondeo de descubrimiento (sockets/ARP).
+
+## Instalación
 
 ```powershell
 git clone https://github.com/Matthew-Garay/IP-Scanner.git
@@ -29,58 +53,57 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Las dependencias son `customtkinter`, `scapy`, `psutil` y `mac-vendor-lookup`. Esta ultima descarga la lista de fabricantes de MAC en el primer arranque y despues trabaja sin conexion. `netifaces` no esta porque no publica paquetes para Python 3.13 y con `psutil` basta.
-
----
+Dependencias: `customtkinter`, `scapy`, `psutil` y `mac-vendor-lookup`. `netifaces` se omite a propósito (no publica paquetes para Python 3.13).
 
 ## Uso
+
+Ejecuta la aplicación **como administrador** (sin ese permiso Windows bloquea los sockets del sondeo):
 
 ```powershell
 python -m ip_inspector.main
 ```
 
-Hay que **correrlo como administrador**. Sin ese permiso Windows no deja abrir los sockets del sondeo de descubrimiento y la app no ve los equipos que contestan por ARP.
-
-Pruebas:
+**Pruebas:**
 
 ```powershell
 python -m unittest discover -s tests -t . -v
 ```
 
-Cada prueba existe porque ese bug ya salio antes y no quiero que vuelva.
-
----
-
-## Compilar el ejecutable
+**Compilar el ejecutable:**
 
 ```powershell
 pip install pyinstaller
 pyinstaller IP_Inspector.spec
+# Resultado: dist\IP_Inspector.exe
 ```
 
-El `.spec` apunta a `ip_inspector/launcher.py` y no a `main.py` a proposito: PyInstaller no sigue la importacion relativa (`from .interface.ui import ...`), empaqueta `main.py` solo y el ejecutable arranca vacio. Con `launcher.py` la importacion es absoluta y el analizador ve todo el paquete. Sale como `dist/IP_Inspector.exe`.
+## Estructura del proyecto
 
----
-
-## Estructura
-
-El codigo va en capas y cada una solo importa de las de abajo:
+El código va en **capas** y cada una solo importa de las de abajo:
 
 ```
-core       el motor: modelos, utilidades, sondeo, el escaner
-analysis   que significan los hallazgos: riesgo, exposicion, informes
-actions    que se le puede hacer a un equipo: abrirlo, despertarlo, exportarlo
-nettools   las pestanas de herramientas y el monitor
-interface  todo lo que toca tkinter
-i18n       el catalogo bilingue
+ip_inspector/
+├── core/        # Motor: modelos, utilidades, sondeo, escáner, inventario
+├── analysis/    # Interpretación de hallazgos: riesgo, exposición, informes
+├── actions/     # Acciones sobre un equipo: abrirlo, despertarlo, exportarlo
+├── nettools/    # Pestañas de herramientas y monitor
+├── interface/   # Todo lo que toca tkinter (ui.py + theme.py + fasttable.py)
+├── i18n.py      # Catálogo bilingüe
+├── launcher.py  # Punto de entrada para PyInstaller
+└── main.py      # Punto de entrada en desarrollo
 ```
 
-Como `core` no importa la interfaz, se puede usar sin pantalla (por eso un escaneo se puede programar en una maquina sin monitor). La interfaz no se importa desde `__init__.py` para que usar solo el motor no cargue tkinter.
-
-Lo largo corre en un hilo trabajador que deja resultados en una `queue.Queue`, y el hilo principal los saca con `after()`. Es la forma segura de tocar tkinter desde otro hilo y la ventana no se congela.
-
----
+Como `core` no importa la interfaz, el motor puede usarse sin pantalla. El trabajo largo corre en un **hilo trabajador** que entrega resultados por `queue.Queue`, y el hilo principal los consume con `after()` para no congelar la ventana.
 
 ## Uso responsable
 
-Esto sondea equipos ajenos. Usalo solo en redes donde tengas permiso.
+Esto sondea equipos ajenos. **Úsalo solo en redes donde tengas permiso.**
+
+## Licencia
+
+Proyecto educativo y de código abierto; puedes usarlo libremente con fines de aprendizaje y redes propias.
+
+## Autor
+
+**Matthew Garay** — [GitHub](https://github.com/Matthew-Garay)
+
