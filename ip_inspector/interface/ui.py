@@ -115,16 +115,16 @@ LOGO_HEIGHT = 52
 
 #: Device table layout.
 #: (i18n key, width px, anchor, monospace, sort key)
-#: Compact Advanced-IP-Scanner style: Estado, IP, Nombre, MAC, Fabricante,
-#: Puertos. El resto de datos (TTL, latencia, riesgo, modelo...) sigue en el
-#: modelo y en detalle/exporte/informe, pero no como columna viva.
+#: Six columns, the way a working scanner reads: status, address,
+#: name, hardware, maker, open ports. Everything else (TTL, latency,
+#: risk, model...) stays in the model for detail/export/report.
 DEVICE_COLUMNS: tuple[tuple[str, int, str, bool, str], ...] = (
-    ("col.status",     22, "center", False, "status"),
-    ("col.ip",        120, "w",      True,  "ip"),
-    ("col.hostname",  190, "w",      False, "hostname"),
-    ("col.mac",       130, "w",      True,  "mac"),
-    ("col.vendor",    170, "w",      False, "vendor"),
-    ("col.ports",     260, "w",      True,  "ports"),
+    ("col.status",     30, "center", False, "status"),
+    ("col.ip",        118, "w",      True,  "ip"),
+    ("col.hostname",  200, "w",      False, "hostname"),
+    ("col.mac",       132, "w",      True,  "mac"),
+    ("col.vendor",    180, "w",      False, "vendor"),
+    ("col.ports",     280, "w",      True,  "ports"),
 )
 
 #: Index of the column that renders the coloured status dot.
@@ -249,10 +249,10 @@ REPAINT_INTERVAL_MS = 250
 ROW_BUDGET_PER_PAINT = 200
 
 #: Opening size of the window, and the smallest it may be dragged to.
-#: Advanced-IP-Scanner style: compact, 6 columns fit in ~1000px.
-WINDOW_SIZE = (1080, 680)
+#: Table plus detail pane side by side need the extra width.
+WINDOW_SIZE = (1240, 720)
 #: Hard minimum size of the window.
-WINDOW_MINIMUM = (980, 600)
+WINDOW_MINIMUM = (1100, 620)
 
 
 def centred_geometry(
@@ -386,7 +386,7 @@ class IPInspectorApp(ctk.CTk):
     def _build_header(self) -> None:
         header = ctk.CTkFrame(self, fg_color="transparent")
         self._sections.append(header)
-        header.grid(row=0, column=0, sticky="ew", padx=20, pady=(16, 6))
+        header.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 4))
         header.grid_columnconfigure(1, weight=1)
 
         brand = ctk.CTkFrame(header, fg_color="transparent")
@@ -595,28 +595,50 @@ class IPInspectorApp(ctk.CTk):
         self._sections.append(self._tabs)
 
     def _build_scan_tab(self, parent: ctk.CTkBaseClass) -> None:
-        # Rows: 0 toolbar, 1 filter bar, 2 results table. The profile row went
-        # away with the port selector: one fixed sweep replaced three modes and
-        # a list to edit, so there is no longer a setting to show here.
+        # Rows: 0 toolbar, 1 summary strip, 2 filter bar, 3 results table.
         parent.grid_columnconfigure(0, weight=1)
-        parent.grid_rowconfigure(2, weight=1)
+        parent.grid_rowconfigure(3, weight=1)
 
         self._build_scan_toolbar(parent)
+        self._build_summary_strip(parent)
         self._build_filter_bar(parent)
 
         holder = theme.panel(parent)
-        holder.grid(row=2, column=0, sticky="nsew", pady=(6, 0))
-        holder.grid_columnconfigure(0, weight=1)
+        holder.grid(row=3, column=0, sticky="nsew", pady=(6, 0))
+        holder.grid_columnconfigure(0, weight=3)
+        holder.grid_columnconfigure(1, weight=1)
         holder.grid_rowconfigure(0, weight=1)
 
         self._table = FastTable(
             holder,
             tuple((i18n.t(k), w, a, m, s) for k, w, a, m, s in DEVICE_COLUMNS),
             on_sort=self._on_sort,
+            on_select=self._on_table_select,
             dot=STATUS_DOT_COLUMN,
         )
-        self._table.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
+        self._table.grid(row=0, column=0, sticky="nsew", padx=(6, 3), pady=6)
         self._table.bind_context_menu(self._on_context_menu)
+
+        side = ctk.CTkFrame(holder, fg_color="transparent")
+        side.grid(row=0, column=1, sticky="nsew", padx=(3, 6), pady=6)
+        side.grid_rowconfigure(1, weight=1)
+        side.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(side, text=i18n.t("detail.title"),
+                     font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color=theme.current().text_secondary,
+                     anchor="w").grid(row=0, column=0, sticky="w",
+                                      padx=6, pady=(2, 4))
+        self._detail_box = ctk.CTkTextbox(
+            side, font=ctk.CTkFont(family="Consolas", size=11),
+            fg_color=theme.current().background, border_width=0,
+            text_color=theme.current().text_primary, wrap="word",
+        )
+        self._detail_box.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 4))
+        try:
+            self._detail_box.insert("end", i18n.t("detail.empty"))
+            self._detail_box.configure(state="disabled")
+        except Exception:
+            pass
 
         self._empty_hint = ctk.CTkLabel(
             self, text=i18n.t("empty.hint"), font=ctk.CTkFont(size=14),
@@ -624,52 +646,134 @@ class IPInspectorApp(ctk.CTk):
         )
         self._empty_hint.grid(row=1, column=0, sticky="nw", padx=20, pady=24)
 
+    def _on_table_select(self, key: str) -> None:
+        """Refresh the detail pane when the selection moves."""
+        try:
+            self._paint_detail(self._devices.get(key))
+        except Exception:
+            pass
+
+    def _paint_detail(self, device) -> None:
+        box = getattr(self, "_detail_box", None)
+        if box is None:
+            return
+        try:
+            box.configure(state="normal")
+            box.delete("1.0", "end")
+            if device is None:
+                box.insert("end", i18n.t("detail.empty"))
+            else:
+                box.insert("end", self._detail_text(device))
+            box.configure(state="disabled")
+        except Exception:
+            pass
+
+    def _detail_text(self, d) -> str:
+        lines = [
+            f"{d.ip_address}  {'●' if d.is_alive else '○'}",
+            f"{d.hostname or '-'}",
+            f"MAC   {d.mac_address or '-'}",
+            f"Marca {d.vendor or '-'}",
+            f"Modelo {(d.model or d.os_name) or '-'}",
+            f"Tipo  {d.device_type or '-'}",
+            f"TTL   {d.ttl_label}   Latencia {d.latency_label} ms",
+            f"Via   {d.discovery_method or '-'}",
+        ]
+        if d.open_port_count:
+            lines.append(f"Puertos ({d.open_port_count}): {d.ports_summary}")
+        else:
+            lines.append("Puertos: -")
+        if d.findings:
+            lines.append("")
+            for f in d.findings[:8]:
+                lines.append(f"[{f.severity}] {f.title} — {f.detail}")
+        return "\n".join(lines)
+
+    def _build_summary_strip(self, parent: ctk.CTkBaseClass) -> None:
+        """One-line summary above the table: counts a tech reads first."""
+        strip = ctk.CTkFrame(parent, fg_color="transparent")
+        strip.grid(row=1, column=0, sticky="ew", pady=(2, 0))
+        strip.grid_columnconfigure(4, weight=1)
+        self._summary_cells: list = []
+        for col in range(5):
+            cell = ctk.CTkLabel(strip, text="", anchor="w",
+                                font=ctk.CTkFont(size=11),
+                                text_color=theme.current().text_secondary)
+            cell.grid(row=0, column=col, sticky="w", padx=(4, 18))
+            self._summary_cells.append(cell)
+        self._refresh_summary()
+
+    def _refresh_summary(self) -> None:
+        cells = getattr(self, "_summary_cells", None)
+        if not cells:
+            return
+        devs = list(getattr(self, "_devices", {}).values())
+        total = len(devs)
+        if not total:
+            for c in cells:
+                c.configure(text="")
+            return
+        alive = sum(1 for d in devs if d.is_alive)
+        ports = sum(d.open_port_count for d in devs)
+        makers = len({(d.vendor or "").strip() for d in devs if d.vendor})
+        with_ports = sum(1 for d in devs if d.open_port_count)
+        try:
+            texts = [
+                i18n.t("status.found", count=total),
+                f"{alive} online",
+                f"{ports} puertos",
+                f"{makers} marcas",
+                f"{with_ports} con puertos",
+            ]
+        except Exception:
+            texts = [f"{total} equipos", f"{alive} online",
+                     f"{ports} puertos", f"{makers} marcas",
+                     f"{with_ports} con puertos"]
+        for cell, text in zip(cells, texts):
+            try:
+                cell.configure(text=text)
+            except Exception:
+                pass
+
+    def _on_filter_change(self, _event=None) -> None:
+        """Re-render only the table; summary and sort stay in sync below."""
+        self._render_table()
+        self._refresh_summary()
+        self._update_sort_label(len(self._visible_devices()))
+
     def _build_scan_toolbar(self, parent: ctk.CTkBaseClass) -> None:
         bar = ctk.CTkFrame(parent, fg_color="transparent")
-        bar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        bar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        bar.grid_columnconfigure(1, weight=1)
 
-        for index, (caption_key, width, placeholder_key, attr) in enumerate((
-            ("label.range", 300, "ph.range", "_range_entry"),
-        )):
-            block = ctk.CTkFrame(bar, fg_color="transparent")
-            block.grid(row=0, column=index * 2, sticky="w", padx=(12, 6), pady=10)
-            # The range is the one field the app cannot run without, so it is
-            # marked as required.
-            caption = i18n.t(caption_key)
-            if attr == "_range_entry":
-                caption = f"{caption} *"
-            theme.caption(block, caption).grid(row=0, column=0, sticky="w")
-            entry = ctk.CTkEntry(
-                block, placeholder_text=i18n.t(placeholder_key), width=width,
-                height=36, font=ctk.CTkFont(size=13),
-                border_width=2,
-                border_color=theme.current().field_border,
-            )
-            entry.grid(row=1, column=0, sticky="w", pady=(3, 0))
-            setattr(self, attr, entry)
-
-            if attr == "_range_entry":
-                # The host count is shown before anything is scanned, so a
-                # mistyped block is caught while it is still being typed.
-                self._target_preview = ctk.CTkLabel(
-                    block, text="", anchor="w", font=ctk.CTkFont(size=11),
-                    text_color=theme.current().text_secondary,
-                )
-                self._target_preview.grid(row=2, column=0, sticky="w", pady=(2, 0))
-                entry.bind("<KeyRelease>", self._schedule_target_preview)
-                # Red border the moment the text cannot be scanned, so the
-                # error is visible in the field rather than only in the
-                # status line, which is easy to miss mid-sweep.
-                entry.bind(
-                    "<FocusOut>",
-                    lambda _e: self._paint_field_state(self._range_entry),
-                )
+        block = ctk.CTkFrame(bar, fg_color="transparent")
+        block.grid(row=0, column=0, sticky="w", padx=(4, 6), pady=8)
+        theme.caption(block, f"{i18n.t('label.range')} *").grid(
+            row=0, column=0, sticky="w")
+        entry = ctk.CTkEntry(
+            block, placeholder_text=i18n.t("ph.range"), width=260,
+            height=34, font=ctk.CTkFont(size=13),
+            border_width=1,
+            border_color=theme.current().field_border,
+        )
+        entry.grid(row=1, column=0, sticky="w", pady=(3, 0))
+        self._range_entry = entry
+        self._target_preview = ctk.CTkLabel(
+            block, text="", anchor="w", font=ctk.CTkFont(size=11),
+            text_color=theme.current().text_secondary,
+        )
+        self._target_preview.grid(row=2, column=0, sticky="w", pady=(2, 0))
+        entry.bind("<KeyRelease>", self._schedule_target_preview)
+        entry.bind(
+            "<FocusOut>",
+            lambda _e: self._paint_field_state(self._range_entry),
+        )
 
         actions = ctk.CTkFrame(bar, fg_color="transparent")
-        actions.grid(row=0, column=2, sticky="e", padx=(6, 12))
+        actions.grid(row=0, column=2, sticky="e", padx=(6, 4))
         # Scan mode: Rapido (27 puertos comunes) vs Completo (1-1024).
         self._scan_mode = ctk.CTkSegmentedButton(
-            actions, values=["Rapido", "Completo"], width=170, height=32,
+            actions, values=["Rapido", "Completo"], width=168, height=30,
             font=ctk.CTkFont(size=11, weight="bold"),
         )
         try:
@@ -679,41 +783,40 @@ class IPInspectorApp(ctk.CTk):
         self._scan_mode.grid(row=0, column=0, padx=(0, 8))
         self._start_button = theme.primary_button(
             actions, "\u25B6  " + i18n.t("btn.start"), self._on_start_scan,
-            width=130, height=36,
+            width=128, height=34,
         )
         self._start_button.grid(row=0, column=1, padx=(0, 6))
         self._stop_button = theme.secondary_button(
-            actions, "\u25A0  " + i18n.t("btn.stop"), self._on_stop_scan, 90, 36,
+            actions, "\u25A0  " + i18n.t("btn.stop"), self._on_stop_scan, 88, 34,
         )
         self._stop_button.configure(state="disabled")
         self._stop_button.grid(row=0, column=2)
-        # Report and export start disabled and stay that way until a scan has
-        # actually produced rows.
+        # Reports live one row below the scan controls: they matter after
+        # the sweep, not while it runs.
+        exports = ctk.CTkFrame(bar, fg_color="transparent")
+        exports.grid(row=1, column=2, sticky="e", padx=(6, 4), pady=(4, 0))
         self._report_button = theme.secondary_button(
-            actions, i18n.t("report.pdf"), self._on_report, 100, 36,
+            exports, i18n.t("report.pdf"), self._on_report, 96, 30,
         )
         self._report_button.configure(state="disabled")
-        self._report_button.grid(row=0, column=3, padx=4)
+        self._report_button.grid(row=0, column=0, padx=3)
         self._report_html_button = theme.secondary_button(
-            actions, i18n.t("report.html"), self._on_report_html, 104, 36,
+            exports, i18n.t("report.html"), self._on_report_html, 100, 30,
         )
         self._report_html_button.configure(state="disabled")
-        self._report_html_button.grid(row=0, column=4, padx=4)
+        self._report_html_button.grid(row=0, column=1, padx=3)
         self._export_csv_button = theme.secondary_button(
-            actions, i18n.t("export.csv"), lambda: self._on_export_data("csv"),
-            56, 36,
+            exports, i18n.t("export.csv"), lambda: self._on_export_data("csv"),
+            54, 30,
         )
         self._export_csv_button.configure(state="disabled")
-        self._export_csv_button.grid(row=0, column=5, padx=4)
+        self._export_csv_button.grid(row=0, column=2, padx=3)
         self._export_json_button = theme.secondary_button(
-            actions, i18n.t("export.json"), lambda: self._on_export_data("json"),
-            60, 36,
+            exports, i18n.t("export.json"), lambda: self._on_export_data("json"),
+            58, 30,
         )
         self._export_json_button.configure(state="disabled")
-        self._export_json_button.grid(row=0, column=6, padx=4)
-
-        # The port switch is gone along with the port field: ports are always
-        # swept, so there was nothing left for it to turn off.
+        self._export_json_button.grid(row=0, column=3, padx=3)
 
     def _schedule_target_preview(self, _event=None) -> None:
         """Recount the hosts once the typing settles, not on every keypress."""
@@ -765,30 +868,34 @@ class IPInspectorApp(ctk.CTk):
         self._target_preview.configure(text=message, text_color=colour)
 
     def _build_filter_bar(self, parent: ctk.CTkBaseClass) -> None:
-        """Filter input plus the current sort indicator."""
+        """Filter input plus the current sort indicator, one line."""
         bar = ctk.CTkFrame(parent, fg_color="transparent")
-        bar.grid(row=2, column=0, sticky="ew", pady=(0, 6))
-        bar.grid_columnconfigure(1, weight=1)
+        bar.grid(row=2, column=0, sticky="ew", pady=(0, 4))
+        bar.grid_columnconfigure(2, weight=1)
 
         ctk.CTkLabel(
-            bar, text=i18n.t("label.filter"), font=ctk.CTkFont(size=10, weight="bold")
-        ).grid(row=0, column=0, padx=(4, 6), sticky="w")
-        self._filter_entry = theme.field(bar, i18n.t("ph.filter"), width=320)
+            bar, text=i18n.t("label.filter"),
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=theme.current().text_secondary,
+        ).grid(row=0, column=0, padx=(4, 8), sticky="w")
+        self._filter_entry = theme.field(bar, i18n.t("ph.filter"), width=300)
         self._filter_entry.grid(row=0, column=1, sticky="w")
         self._filter_entry.bind("<KeyRelease>", self._on_filter_change)
+        self._on_filter_change()
 
-        # How many rows survived, so a filter that matched nothing is obvious
-        # instead of looking like a scan that found nothing.
+        # Right side: "N of M" then sort state, separated so they never
+        # sit on top of each other.
         self._filter_count = ctk.CTkLabel(
             bar, text="", font=ctk.CTkFont(size=11),
             text_color=theme.current().text_secondary,
         )
-        self._filter_count.grid(row=0, column=2, sticky="e", padx=(10, 14))
+        self._filter_count.grid(row=0, column=3, sticky="e", padx=(12, 4))
 
         self._sort_label = ctk.CTkLabel(
-            bar, text="", font=ctk.CTkFont(size=11)
+            bar, text="", font=ctk.CTkFont(size=11),
+            text_color=theme.current().text_muted,
         )
-        self._sort_label.grid(row=0, column=2, sticky="e", padx=6)
+        self._sort_label.grid(row=0, column=4, sticky="e", padx=(4, 6))
 
 
 
@@ -958,12 +1065,6 @@ class IPInspectorApp(ctk.CTk):
         self._dirty.clear()
 
         devices = self._visible_devices()
-        # Updated in place: the table holds a reference to this exact dict, so
-        # rebinding it here would leave every row drawing the fallback shape.
-        self._icon_kinds.clear()
-        self._icon_kinds.update(
-            {d.ip_address: theme.icon_kind(d.device_type) for d in devices}
-        )
         self._table.rebuild(
             [(d.ip_address, self._row_values(d), self._state_tags(d)) for d in devices]
         )
@@ -972,6 +1073,12 @@ class IPInspectorApp(ctk.CTk):
         }
         self._toggle_empty_hint(len(devices))
         self._update_sort_label(len(devices))
+        self._refresh_summary()
+        # Keep the detail pane on the selected row after a rebuild.
+        try:
+            self._paint_detail(self._devices.get(self._table.selected_key()))
+        except Exception:
+            pass
 
     def _paint_deferred(self) -> None:
         """Flush a throttled repaint scheduled while a scan was running."""
@@ -1044,9 +1151,6 @@ class IPInspectorApp(ctk.CTk):
                 continue
             cells = self._row_values(device)
             dot = self._state_tags(device)
-            # The pictogram is keyed by row, so the table needs to be told which
-            # shape this address draws before the row is created or updated.
-            self._icon_kinds[key] = theme.icon_kind(device.device_type)
             if self._table.has_key(key):
                 if self._row_cache.get(key) != cells:
                     self._table.update_row(key, cells, dot)
@@ -1060,6 +1164,7 @@ class IPInspectorApp(ctk.CTk):
         self._dirty.clear()
         self._toggle_empty_hint(self._table.row_count())
         self._update_sort_label(self._table.row_count())
+        self._refresh_summary()
         self._schedule_next_paint()
 
     def _schedule_next_paint(self) -> None:
@@ -1332,7 +1437,6 @@ class IPInspectorApp(ctk.CTk):
         # finished painting.
         self._dirty.clear()
         self._pending_rows.clear()
-        self._icon_kinds.clear()
         if self._paint_job is not None:
             try:
                 self.after_cancel(self._paint_job)
@@ -1342,6 +1446,8 @@ class IPInspectorApp(ctk.CTk):
         self._table.rebuild([])
         self._toggle_empty_hint(0)
         self._update_sort_label(0)
+        self._refresh_summary()
+        self._paint_detail(None)
         self._set_phase(i18n.t("status.scanning"))
 
     def _drain_events(self) -> None:
