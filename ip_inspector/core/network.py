@@ -72,8 +72,8 @@ HOSTNAME_TIMEOUT = 1.5
 #: Bumped workers so a /24 finishes in one wave instead of three; the
 #: timeout is cut because a stack that answers does so immediately and a
 #: silent one is not worth waiting on.
-WINDOW_WORKERS = 16
-WINDOW_TIMEOUT = 0.5
+WINDOW_WORKERS = 32
+WINDOW_TIMEOUT = 0.3
 
 #: System ping calls used to read a TTL when ICMP needs no elevation.
 #: Each lookup is one `ping -n 1` process; 64 parallel processes still cost
@@ -85,8 +85,8 @@ TTL_TIMEOUT = 0.7
 #: HTTP titles, ONVIF descriptions and RTSP banners must never dominate the
 #: sweep, so each device is capped here even when its web server stalls.
 IDENTIFY_WORKERS = 32
-IDENTIFY_TIMEOUT = 2.5
-IDENTIFY_HTTP_TIMEOUT = 0.8
+IDENTIFY_TIMEOUT = 1.5
+IDENTIFY_HTTP_TIMEOUT = 0.5
 
 #: Lines of an HTTP response read while grabbing a banner; the headers end
 #: long before this, and a service that rambles is cut off there.
@@ -379,8 +379,13 @@ class NetworkScanner:
                 seen = await self._icmp_ping(ip, timeout)
                 latency, ttl = seen if seen else (None, None)
                 if latency is None:
+                    for port in FAST_LIVENESS_PORTS:
+                        latency = await self._tcp_ping(ip, FAST_LIVENESS_TIMEOUT)
+                        if latency is not None:
+                            break
+                if latency is None:
                     for port in REACHABILITY_PORTS:
-                        latency = await self._tcp_ping(ip, port, timeout)
+                        latency = await self._tcp_ping(ip, timeout)
                         if latency is not None:
                             break
             if latency is not None:
