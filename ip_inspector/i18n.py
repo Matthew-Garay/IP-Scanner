@@ -172,6 +172,11 @@ CATALOG: dict[str, dict[str, str]] = {
         "en": "Run a scan to see the devices on this network",
         "es": "Ejecuta un escaneo para ver los equipos de esta red",
     },
+    "detail.title": {"en": "Detail", "es": "Detalle"},
+    "detail.empty": {
+        "en": "Select a row to see the full device record.",
+        "es": "Selecciona una fila para ver la ficha completa del equipo.",
+    },
     # -- scanner phases ------------------------------------------------
     "phase.discovery": {"en": "Discovery", "es": "Descubrimiento"},
     "phase.ports": {"en": "Ports", "es": "Puertos"},

@@ -1,4 +1,9 @@
-"""Fast results table: one Treeview, Advanced-IP-Scanner style."""
+"""Fast results table: a single native Treeview with a thin styled frame.
+
+One widget draws every row, so a full sweep costs the same as the
+visible page. Styled to sit quietly inside the window: flat header,
+zebra rows, native scrollbar.
+"""
 from __future__ import annotations
 from tkinter import ttk
 import customtkinter as ctk
@@ -42,15 +47,24 @@ class FastTable(ctk.CTkFrame):
         except Exception:
             pass
         try:
+            # Flat header, no borders: the colour band does the work.
+            # Rows breathe a little (26px) so dense sweeps stay readable
+            # without looking like a spreadsheet from 2003.
             st.configure("AIS.Treeview", background=pal.surface,
                          foreground=pal.text_primary,
-                         fieldbackground=pal.surface, rowheight=24,
-                         font=("Segoe UI", 10), borderwidth=0)
+                         fieldbackground=pal.surface, rowheight=26,
+                         font=("Segoe UI", 10), borderwidth=0,
+                         relief="flat")
             st.configure("AIS.Treeview.Heading", background=pal.header_bg,
                          foreground=pal.header_text,
-                         font=("Segoe UI", 9, "bold"))
+                         font=("Segoe UI", 9, "bold"),
+                         relief="flat", borderwidth=0)
             st.map("AIS.Treeview",
-                   background=[("selected", pal.selection)])
+                   background=[("selected", pal.selection)],
+                   foreground=[("selected", pal.selection_text)])
+            st.configure("AIS.Vertical.TScrollbar", gripcount=0,
+                         background=pal.border, troughcolor=pal.surface,
+                         borderwidth=0, arrowsize=0)
         except Exception:
             pass
         ids = [f"c{i}" for i in range(len(self._columns))]
@@ -64,7 +78,8 @@ class FastTable(ctk.CTkFrame):
             self._tree.column(ids[i], width=wid, minwidth=40,
                               anchor=anc, stretch=True)
         vsb = ttk.Scrollbar(self, orient="vertical",
-                            command=self._tree.yview)
+                            command=self._tree.yview,
+                            style="AIS.Vertical.TScrollbar")
         self._tree.configure(yscrollcommand=vsb.set)
         self._tree.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
