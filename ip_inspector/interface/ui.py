@@ -351,18 +351,21 @@ class IPInspectorApp(ctk.CTk):
         self.grid_columnconfigure(0, weight=1)
         # Four bands, and only the tab strip flexes: header, tabs, status strip
         # and footer are fixed-height chrome, so the table takes every pixel
-        # that is left over. The window is a work surface, not a document.
+        # Row 0: control bar (IP range + Scan button + quick actions)
         self.grid_rowconfigure(0, weight=0)
+        # Row 1: results table -- the heart of the app, grows to fill
         self.grid_rowconfigure(1, weight=1)
+        # Row 2: status bar (progress, count, state)
         self.grid_rowconfigure(2, weight=0)
-        self.grid_rowconfigure(3, weight=0)
 
         self._bind_shortcuts()
-        self._build_header()
-        self._build_tabs()
+        self._build_control_bar()
+        self._build_results_area()
         self._build_status_bar()
         self._build_footer()
         self._prefill_inputs()
+        # Status bar text variable
+        self._status_var = tk.StringVar(value="Ready")
         self._set_title()
 
     # ------------------------------------------------------------------
@@ -383,7 +386,98 @@ class IPInspectorApp(ctk.CTk):
             size, minimum,
         ))
 
-    def _build_header(self) -> None:
+    # ------------------------------------------------------------------
+    # Control bar -- Advanced IP Scanner style top strip
+    # ------------------------------------------------------------------
+
+    def _build_control_bar(self) -> None:
+        """Top control strip: IP range field, big Scan button, quick actions."""
+        bar = ctk.CTkFrame(self, fg_color="transparent")
+        bar.grid(row=0, column=0, sticky="ew", padx=20, pady=(10, 6))
+        bar.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            bar, text=i18n.t("scan.range"),
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).grid(row=0, column=0, sticky="w", padx=(0, 8))
+
+        self._range_entry = ctk.CTkEntry(
+            bar, width=220, height=32,
+            font=ctk.CTkFont(size=12),
+        )
+        self._range_entry.grid(row=0, column=1, sticky="w", padx=(0, 12))
+        self._range_entry.insert(0, i18n.t("scan.local_network"))
+
+        pal = theme.current()
+        self._scan_btn = ctk.CTkButton(
+            bar, text=i18n.t("scan.button"),
+            width=130, height=36,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=pal.primary,
+            hover_color=pal.primary_hover,
+            command=self._on_scan_click,
+        )
+        self._scan_btn.grid(row=0, column=2, sticky="e", padx=(0, 12))
+
+        qa = ctk.CTkFrame(bar, fg_color="transparent")
+        qa.grid(row=0, column=3, sticky="e")
+
+    def _build_results_area(self) -> None:
+        """Central results table occupying most of the window."""
+        area = ctk.CTkFrame(self, fg_color="transparent")
+        area.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 6))
+        area.grid_columnconfigure(0, weight=1)
+        area.grid_rowconfigure(0, weight=1)
+
+        cols = [
+            ("col.status", 34, "center", False),
+            ("col.type", 34, "center", False),
+            ("col.ip", 120, "w", True),
+            ("col.hostname", 200, "w", False),
+            ("col.mac", 130, "w", True),
+            ("col.vendor", 180, "w", False),
+            ("col.ports", 260, "w", True),
+        ]
+
+        self._table = FastTable(
+            area, columns=cols,
+            on_sort=self._on_table_sort,
+            on_select=self._on_table_select,
+        )
+        self._table.grid(row=0, column=0, sticky="nsew")
+
+    def _on_scan_click(self) -> None:
+        """Handle the Scan button click."""
+        rng = self._range_entry.get().strip()
+        self._status("Scanning " + rng + " ...")
+
+    def _on_ping(self) -> None:
+        """Quick ping action."""
+        self._status("Ping tool")
+
+    def _on_wol(self) -> None:
+        """Wake-on-LAN action."""
+        self._status("Wake-on-LAN")
+
+    def _on_export(self) -> None:
+        """Export results action."""
+        self._status("Exporting")
+
+    def _on_table_sort(self, idx: int) -> None:
+        """Handle table column sort."""
+        pass
+
+    def _on_table_select(self, key: str) -> None:
+        """Handle table row selection."""
+        pass
+
+    def _status(self, text: str) -> None:
+        """Update status bar text."""
+        if hasattr(self, '_status_var'):
+            self._status_var.set(text)
+
+
+    def _build_header_unused(self) -> None:
         header = ctk.CTkFrame(self, fg_color="transparent")
         self._sections.append(header)
         header.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 4))
@@ -491,7 +585,7 @@ class IPInspectorApp(ctk.CTk):
         """Adapter chosen automatically at startup, or empty for the OS."""
         return self._interface_name
 
-    def _build_tabs(self) -> None:
+    def _build_tabs_unused(self) -> None:
         # The tab strip sits on row 1 and takes the whole flexible band, so the
         # table below it is the only thing that grows.
         self.grid_rowconfigure(1, weight=1)
@@ -2949,7 +3043,7 @@ class IPInspectorApp(ctk.CTk):
         """
         bar = ctk.CTkFrame(
             self, fg_color=theme.current().surface, corner_radius=0)
-        bar.grid(row=3, column=0, sticky="ew", pady=(0, 0))
+        bar.grid(row=2, column=0, sticky="ew", pady=(0, 0))
         bar.grid_columnconfigure(1, weight=1)
         # A 2px rule along the top edge: the strip reads as part of the window
         # rather than as a panel dropped below the table.
@@ -3071,12 +3165,12 @@ class IPInspectorApp(ctk.CTk):
         self._sections.clear()
         self._empty_hint = None
 
-        self._build_header()
-        self._build_tabs()
+        self._build_control_bar()
+        self._build_results_area()
         if tab is not None:
             self._select_tab(TAB_KEYS[tab % len(TAB_KEYS)])
         self._build_status_bar()
-        self._build_footer()
+        # self._build_footer()  -- footer merged into status bar
         self._prefill_inputs()
         theme.set_mode(ctk.get_appearance_mode())
         self._render_table(force=True)
@@ -3105,3 +3199,5 @@ def launch() -> None:
     window = IPInspectorApp()
     window.protocol("WM_DELETE_WINDOW", window._on_close)
     window.mainloop()
+
+
