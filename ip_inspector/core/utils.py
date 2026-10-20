@@ -157,7 +157,13 @@ def list_adapters() -> list[NetworkAdapter]:
     beats a VPN overlay, because sweeping the wrong one is the exact problem
     the selector exists to solve.
     """
-    import psutil
+    try:
+        import psutil
+    except ImportError:
+        # psutil is a production dependency, but the interface must still
+        # open on a machine where it is missing: an empty adapter list
+        # means "no network detected", not a window that refuses to start.
+        return []
 
     adapters: list[NetworkAdapter] = []
     try:

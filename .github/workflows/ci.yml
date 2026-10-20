@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Ejecutar pruebas
+        run: |
+          python -m pytest tests/ -v --cov=ip_inspector --cov-report=term
+
+      - name: Verificar estructura del proyecto
+        run: |
+          test -f ip_inspector/main.py && echo "ip_inspector/main.py presente" || echo "Falta ip_inspector/main.py"
+          test -f requirements.txt && echo "requirements.txt presente" || echo "Falta requirements.txt"
+          test -f README.md && echo "README.md presente" || echo "Falta README.md"

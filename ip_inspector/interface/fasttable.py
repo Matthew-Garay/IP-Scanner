@@ -93,6 +93,14 @@ class FastTable(ctk.CTkFrame):
         except Exception:
             pass
         self._tree.bind("<<TreeviewSelect>>", self._sel)
+        # Scroll bindings so the table responds on Windows (mouse wheel,
+        # trackpad, and the native scrollbar) even inside a CTkTabview.
+        # Without these, customtkinter does not always forward mouse wheel
+        # events to embedded ttk widgets, which makes the results and
+        # Favoritos tables unscrollable and can raise Tcl errors.
+        self._tree.bind("<MouseWheel>", self._on_mouse_wheel)
+        self._tree.bind("<Button-4>", self._on_scroll_up)
+        self._tree.bind("<Button-5>", self._on_scroll_down)
 
     def _sort(self, idx):
         if self._on_sort:
@@ -137,26 +145,37 @@ class FastTable(ctk.CTkFrame):
         return None
     def rebuild(self, rows, sparklines=None):
         self.clear()
-        for p, (k, c, d) in enumerate(rows):
-            self._insert(p, k, c, d)
+        for key, cells, dot in rows:
+            self.append_row(key, cells, dot)
 
     def _insert(self, pos, key, cells, dot, samples=None):
         vals = [cells[i] if i < len(cells) else ""
                 for i in range(len(self._columns))]
-        if pos >= len(self._order):
+        if not isinstance(pos, int) or pos < 0 or pos >= len(self._order):
             self._order.append(key)
+            final_pos = "end"
+            tag_pos = len(self._order) - 1
         else:
             self._order.insert(pos, key)
+            final_pos = pos
+            tag_pos = pos
         self._rows[key] = (list(vals), dot)
         try:
-            self._tree.insert("", pos, iid=key, values=vals,
-                              tags=self._tag(dot, pos))
-        except Exception:
+            self._tree.insert("", final_pos, iid=key, values=vals,
+                              tags=self._tag(dot, tag_pos))
+        except Exception as insert_err:
+            # Do not fall back to "end" silently: the row must stay in the
+            # logical order so scrolling stays stable. Only log and carry on
+            # with a best-effort insert so the table can still render.
             try:
                 self._tree.insert("", "end", iid=key, values=vals,
-                                  tags=self._tag(dot, pos))
+                                  tags=self._tag(dot, len(self._order) - 1))
             except Exception:
-                pass
+                # The Treeview itself is unusable; surface a clear error so
+                # the caller knows the table is broken instead of hiding it.
+                raise RuntimeError(
+                    f"FastTable insertion failed for row {key!r}: {insert_err}"
+                ) from insert_err
 
     def has_key(self, key):
         return key in self._rows
@@ -191,6 +210,12 @@ class FastTable(ctk.CTkFrame):
                 pass
         self._rows.clear()
         self._order.clear()
+        self._selected = None
+
+    def reset(self):
+        """Reset the table state (used when the whole table is being
+        rebuilt while a scroll or selection is in progress)."""
+        self.clear()
         self._selected = None
 
     def row_count(self):
@@ -236,6 +261,33 @@ class FastTable(ctk.CTkFrame):
     def bind_context_menu(self, cb):
         try:
             self._tree.bind("<Button-3>", cb)
+        except Exception:
+            pass
+
+    def _on_mouse_wheel(self, event):
+        """Translate platform mouse wheel events into Treeview scrolling."""
+        try:
+            if event.num == 4 or event.delta == 120:
+                self._tree.yview("scroll", -1, "units")
+            elif event.num == 5 or event.delta == -120:
+                self._tree.yview("scroll", 1, "units")
+            else:
+                self._tree.yview("scroll", -1 if event.delta > 0 else 1, "units")
+        except Exception:
+            # Scroll events are advisory; never let a bad scroll break the UI.
+            pass
+
+    def _on_scroll_up(self, _event=None):
+        """Native scroll-up (Button-4 / trackpad up)."""
+        try:
+            self._tree.yview("scroll", -1, "units")
+        except Exception:
+            pass
+
+    def _on_scroll_down(self, _event=None):
+        """Native scroll-down (Button-5 / trackpad down)."""
+        try:
+            self._tree.yview("scroll", 1, "units")
         except Exception:
             pass
 

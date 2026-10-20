@@ -167,14 +167,14 @@ class NetworkScanner:
             if not self.is_stopping:
                 self._classify_all(devices)
 
+        devices.sort(key=lambda device: int(ipaddress.ip_address(device.ip_address)))
         for device in devices:
             self._emit(ScannerEvent("Device", device=device))
 
-            self._emit(ScannerEvent("Finished", f"{len(devices)} devices found")
-                       if not self.is_stopping
-                       else ScannerEvent("Cancelled", "Scan stopped by user"))
+        self._emit(ScannerEvent("Finished", f"{len(devices)} devices found")
+                   if not self.is_stopping
+                   else ScannerEvent("Cancelled", "Scan stopped by user"))
 
-        devices.sort(key=lambda device: int(ipaddress.ip_address(device.ip_address)))
         return devices
 
     # ------------------------------------------------------------------
@@ -365,6 +365,7 @@ class NetworkScanner:
         except RuntimeError:
             # An event loop is already running on this thread; skip the probe.
             logger.debug("Nested event loop detected; skipping reachability probe.")
+            return {}
 
     async def _probe_all(
         self, ips: list[str], timeout: float, concurrency: int
@@ -380,12 +381,14 @@ class NetworkScanner:
                 latency, ttl = seen if seen else (None, None)
                 if latency is None:
                     for port in FAST_LIVENESS_PORTS:
-                        latency = await self._tcp_ping(ip, FAST_LIVENESS_TIMEOUT)
+                        latency = await self._tcp_ping(
+                            ip, port, FAST_LIVENESS_TIMEOUT
+                        )
                         if latency is not None:
                             break
                 if latency is None:
                     for port in REACHABILITY_PORTS:
-                        latency = await self._tcp_ping(ip, timeout)
+                        latency = await self._tcp_ping(ip, port, timeout)
                         if latency is not None:
                             break
             if latency is not None:

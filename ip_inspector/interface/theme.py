@@ -1,15 +1,13 @@
-"""Corporate colour palette and result table for IP Inspector.
+"""Industrial colour palette and result table for IP Inspector.
 
-The palette follows a restrained industrial scheme: one corporate blue for
-actions and selection, a near-white (light) or slate (dark) background --
-never pure black, which fatigues the eye -- and semantic colours reserved
-strictly for device state.
+The palette follows the Advanced IP Scanner look: neutral greys and whites
+for backgrounds, one strong call-to-action colour for the Scan button, and
+semantic state colours reserved strictly for device status (green reachable,
+grey offline, amber warning).
 
-The results table is a grid of lightweight per-row frames rather than a
-``ttk.Treeview``. A Treeview cannot host a chart in a cell, and the tables
-here carry status *dots* plus a latency sparkline, so a few rows of composed
-widgets are cheaper than fighting the widget. Rows are appended during a
-scan and rebuilt only on sort or filter, so a full /24 sweep stays fast.
+The results table uses a native :class:`tkinter.ttk.Treeview` with flat
+header, zebra rows and hairline grid lines -- dense, scannable, and
+resizable column by column.
 """
 
 from __future__ import annotations
@@ -25,142 +23,122 @@ import customtkinter as ctk
 class Palette:
     """Resolved colours for one appearance mode."""
 
+    #: Brand / action colour used for the Scan button and selected row.
     primary: str
     primary_hover: str
     primary_active: str
-    #: Deeper accent held back for the one call to action on screen, so the
-    #: primary blue can stay on secondary affordances without diluting it.
+    #: Secondary action colour (secondary buttons, subtle accents).
     accent: str
     accent_hover: str
     accent_text: str
+    #: Window page colour behind panels.
     background: str
+    #: Panel / card background.
     surface: str
-    #: Slightly offset surface: group strips, hover plates, quiet panels.
+    #: Slightly offset surface for group strips and hover plates.
     surface_alt: str
     hover: str
     text_primary: str
     text_secondary: str
-    #: Caption grey. Held above 4.5:1 on the surfaces it is drawn on: labels
-    #: such as column heads and field captions carry meaning.
     text_muted: str
     header_bg: str
     header_text: str
     row_even: str
     row_odd: str
-    #: Hairline between table rows and panels: structure without borders.
     grid_line: str
     selection: str
     selection_text: str
     border: str
-    #: Field fill. Deliberately *not* the panel colour: an input that matches
-    #: the panel behind it reads as text printed on the window.
     field: str
-    #: Field border, held at 3:1 or better against both the panel and the
-    #: field fill (WCAG 1.4.11, non-text contrast).
     field_border: str
     field_focus: str
-    #: Small status/context chip.
     chip: str
     chip_text: str
-    #: Kept for the plain ``input_bg`` readers; same as ``field``.
     input_bg: str
     online: str
     vpn: str
     warning: str
-    #: State codes, kept separate from the brand so "green = reachable" never
-    #: competes with "blue = you can click this".
     state_ok: str
     state_warn: str
     state_off: str
     state_idle: str
 
 
-#: Corporate light scheme, saturated on purpose. The blue is a real blue
-#: rather than the washed-out corporate tint it replaced, and the table
-#: header is a coloured slab: it is the one place where a band of colour
-#: earns its keep, because it marks the top of the grid at a glance and
-#: makes the columns read as columns.
+#: Light scheme -- Advanced IP Scanner style.
+#: Neutral industrial greys, white panels, strong blue/green Scan button.
 LIGHT = Palette(
-    primary="#0A5BD0",
-    primary_hover="#0849AC",
-    primary_active="#063B8C",
-    accent="#0A5BD0",
-    accent_hover="#0849AC",
+    primary="#0078D4",
+    primary_hover="#0063B9",
+    primary_active="#004C8F",
+    accent="#2E7D32",
+    accent_hover="#1B5E20",
     accent_text="#FFFFFF",
-    # A page with a faint blue cast, so white panels sit *on* it instead of
-    # disappearing into it. Still light enough to keep the table the focus.
-    background="#EEF3FB",
+    background="#F2F2F2",
     surface="#FFFFFF",
-    surface_alt="#F6F9FE",
-    hover="#E3EDFC",
-    text_primary="#16233A",
-    text_secondary="#46566F",
-    text_muted="#6F7E96",
-    # The coloured header band. White text on the saturated primary, which
-    # clears 4.5:1 comfortably at the 10-11px the headers are drawn at.
-    header_bg="#0A5BD0",
-    header_text="#FFFFFF",
+    surface_alt="#EDEDED",
+    hover="#D9D9D9",
+    text_primary="#323130",
+    text_secondary="#605E5C",
+    text_muted="#8A8886",
+    header_bg="#F2F2F2",
+    header_text="#323130",
     row_even="#FFFFFF",
-    row_odd="#F4F8FE",
-    # Hairline between rows. Structure comes from one faint line rather than
-    # from borders around every cell, which is what a spreadsheet shows.
-    grid_line="#DCE4F0",
-    selection="#CBE0FF",
-    selection_text="#063B8C",
-    border="#C3CFE0",
+    row_odd="#F7F7F7",
+    grid_line="#D0D0D0",
+    selection="#E2EFFF",
+    selection_text="#323130",
+    border="#C8C8C8",
     field="#FFFFFF",
-    field_border="#AEBDD2",
-    field_focus="#0A5BD0",
-    chip="#E3EDFC",
-    chip_text="#1F3C66",
+    field_border="#A6A6A6",
+    field_focus="#0078D4",
+    chip="#EDEDED",
+    chip_text="#323130",
     input_bg="#FFFFFF",
-    online="#0F9D58",
-    vpn="#E0870B",
-    warning="#D93025",
-    state_ok="#0F9D58",
-    state_warn="#E0870B",
-    state_off="#D93025",
-    state_idle="#64748B",
+    online="#2E7D32",
+    vpn="#F57C00",
+    warning="#D32F2F",
+    state_ok="#2E7D32",
+    state_warn="#F57C00",
+    state_off="#D32F2F",
+    state_idle="#9E9E9E",
 )
 
-#: Dark scheme: slate rather than pure black, with the page darker than the
-#: panels and the panels darker than the fields, so the same layering the
-#: light scheme uses still reads top-down.
+#: Dark scheme: slate rather than pure black.
 DARK = Palette(
-    primary="#2E86C8",
-    primary_hover="#3D99DE",
-    primary_active="#256EAC",
-    accent="#4DA3E8",
-    accent_hover="#63B6F2",
-    accent_text="#0B1621",
-    background="#16181C",
-    surface="#21252B",
-    surface_alt="#1B1E23",
-    hover="#2C3138",
-    text_primary="#E8EAED",
-    text_secondary="#B9C0C9",
-    text_muted="#96A0AC",
-    header_bg="#1B3A56",
+    primary="#0A84FF",
+    primary_hover="#0060DF",
+    primary_active="#004C9E",
+    accent="#30D158",
+    accent_hover="#2CB248",
+    accent_text="#000000",
+    background="#1E1E1E",
+    surface="#252525",
+    surface_alt="#2D2D2D",
+    hover="#383838",
+    text_primary="#FFFFFF",
+    text_secondary="#C9C9C9",
+    text_muted="#858585",
+    header_bg="#252525",
     header_text="#FFFFFF",
-    row_even="#21252B",
-    row_odd="#1D2126",
-    grid_line="#313740",
-    selection="#24507D",
+    row_even="#252525",
+    row_odd="#2D2D2D",
+    grid_line="#3E3E3E",
+    selection="#2A4D8F",
     selection_text="#FFFFFF",
-    border="#3A414A",
-    field="#14171A",
-    field_border="#4C5661",
-    field_focus="#4DA3E8",
-    chip="#262B32",
-    chip_text="#C6CDD6",
-    input_bg="#14171A",
-    online="#3FB950",
-    vpn="#D29922",
-    warning="#F85149",
-    state_ok="#3FB950",
-    state_warn="#D29922",
-    state_off="#F85149",
-    state_idle="#8B949E",
+    border="#4A4A4A",
+    field="#323232",
+    field_border="#6E6E6E",
+    field_focus="#0A84FF",
+    chip="#383838",
+    chip_text="#FFFFFF",
+    input_bg="#323232",
+    online="#30D158",
+    vpn="#FF9F0A",
+    warning="#FF453A",
+    state_ok="#30D158",
+    state_warn="#FF9F0A",
+    state_off="#FF453A",
+    state_idle="#8E8E8E",
 )
 
 
