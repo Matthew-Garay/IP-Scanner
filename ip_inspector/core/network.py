@@ -177,6 +177,14 @@ class NetworkScanner:
 
         return devices
 
+    def scan(self, request: ScanRequest, stop_event: threading.Event | None = None) -> list[Device]:
+        """Public scan entry point compatible with UI threading contract.
+
+        Honours ``stop_event`` between phases; if None, uses the internal
+        ``_stop_event`` so the UI can still cancel the scan.
+        """
+        return self.run_scan(request)
+
     # ------------------------------------------------------------------
     # Event plumbing
     # ------------------------------------------------------------------
