@@ -142,6 +142,16 @@ class NetworkScanner:
     def run_scan(self, request: ScanRequest) -> list[Device]:
         """Execute a full scan and return the discovered devices."""
         self.reset()
+        return self._run_scan_body(request)
+
+    def _run_scan_body(self, request: ScanRequest) -> list[Device]:
+        """The scan proper, with the cancellation flag already prepared.
+
+        Split out from :meth:`run_scan` so that :meth:`scan` can arm the
+        cancellation flag *before* the sweep starts; otherwise the reset
+        happening at the top of the scan would erase a stop request that
+        arrived a few milliseconds earlier.
+        """
         plan = plan_targets(request.target_range)
         targets = plan.addresses()
         if not targets:
@@ -178,12 +188,48 @@ class NetworkScanner:
         return devices
 
     def scan(self, request: ScanRequest, stop_event: threading.Event | None = None) -> list[Device]:
-        """Public scan entry point compatible with UI threading contract.
+        """Public scan entry point compatible with the UI threading contract.
 
-        Honours ``stop_event`` between phases; if None, uses the internal
-        ``_stop_event`` so the UI can still cancel the scan.
+        The UI owns the cancel button and therefore the cancel flag, so when an
+        external ``stop_event`` is supplied we mirror it into the scanner's own
+        ``_stop_event`` (which every phase already polls through
+        :attr:`is_stopping`). If no external event is given, the internal one
+        is used on its own, exactly as before.
         """
-        return self.run_scan(request)
+        if stop_event is None:
+            return self.run_scan(request)
+
+        # Arm the cancellation flag before anything else: a stop request that
+        # arrived while the caller was still starting us must survive.
+        self.reset()
+        if stop_event.is_set():
+            self._stop_event.set()
+
+        # Bridge the caller's event into ours. A tiny watcher thread keeps the
+        # two flags in sync while the scan runs; it exits as soon as the scan
+        # finishes, so it never outlives the worker.
+        bridge = threading.Event()
+
+        def _watch() -> None:
+            while not bridge.is_set():
+                if stop_event.is_set():
+                    self._stop_event.set()
+                    return
+                if self._stop_event.is_set():
+                    # Scanner cancelled from the inside: propagate it back so
+                    # the UI's button state stays in sync with the worker.
+                    stop_event.set()
+                    return
+                stop_event.wait(0.05)
+
+        watcher = threading.Thread(target=_watch, daemon=True)
+        watcher.start()
+        try:
+            return self._run_scan_body(request)
+        finally:
+            bridge.set()
+            watcher.join(timeout=0.5)
+
 
     # ------------------------------------------------------------------
     # Event plumbing
