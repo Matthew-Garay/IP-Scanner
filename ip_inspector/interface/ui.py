@@ -1,20 +1,20 @@
 ﻿"""
-CustomTkinter user interface for IP Inspector â€” Advanced IP Scanner style.
+CustomTkinter user interface for IP Inspector — Advanced IP Scanner style.
 
 Layout (top to bottom, left to right):
 
-* Native menu bar:  Archivo | Vista | ConfiguraciÃ³n | Ayuda
+* Native menu bar:  Archivo | Vista | Configuración | Ayuda
 * Toolbar:          Explorar (Play) | Pausa | Detener | red
-* Control row:      Rango IP (label + entry)  â”€â”€â”  Filtro rÃ¡pido (entry + borrar)
+* Control row:      Rango IP (label + entry)  ──┐  Filtro rápido (entry + borrar)
 * Tab view:         [ Lista de resultados ] | [ Favoritos ]
 * Main area:        Tree-view table (Estado, Nombre, IP, Fabricante, MAC, Puertos)
                       + collapsible Detalle panel on the right
-* Status bar:       mÃ©tricas en tiempo real (activo / inactivo / desconocido)
+* Status bar:       métricas en tiempo real (activo / inactivo / desconocido)
 
 Threading model
 ---------------
 Every long operation runs on a worker thread that pushes results onto a
-``queue.Queue``. The main thread drains it with ``after()`` â€” the only safe
+``queue.Queue``. The main thread drains it with ``after()`` — the only safe
 way to update tkinter from another thread and keeps the window responsive
 during a full sweep.
 
@@ -82,7 +82,7 @@ TREE_COLUMNS: tuple[tuple[str, int, str], ...] = (
 
 
 # --------------------------------------------------------------------------- #
-# Device tree â€” table with expandable services (Advanced IP Scanner style)
+# Device tree — table with expandable services (Advanced IP Scanner style)
 # --------------------------------------------------------------------------- #
 class DeviceTree(ctk.CTkFrame):
     """Tree-view table: one row per device, expandable to show open services.
@@ -224,7 +224,7 @@ class DeviceTree(ctk.CTkFrame):
         )
         tag = "st_ok" if dev.is_alive else "st_off"
         # The tree column (#0) holds the expand arrow + status dot glyph.
-        text = "â— " if dev.is_alive else "â—‹ "
+        text = "● " if dev.is_alive else "○ "
         iid = self._tree.insert("", "end", iid=f"dev:{ip}", text=text,
                                 values=values, open=False, tags=(tag,))
         self._device_item[ip] = iid
@@ -244,7 +244,7 @@ class DeviceTree(ctk.CTkFrame):
             dev.ports_summary or "-",
         )
         tag = "st_ok" if dev.is_alive else "st_off"
-        text = "â— " if dev.is_alive else "â—‹ "
+        text = "● " if dev.is_alive else "○ "
         iid = self._device_item[ip]
         self._tree.item(iid, text=text, values=values, tags=(tag,))
 
@@ -265,7 +265,7 @@ class DeviceTree(ctk.CTkFrame):
                 continue
             name = KNOWN_SERVICES.get(port.number, port.service or "Desconocido")
             values = (str(port.number), name, "Abierto", port.banner or "-")
-            child = self._tree.insert(iid, "end", text="â–¸", values=values,
+            child = self._tree.insert(iid, "end", text="▸", values=values,
                                       tags=("svc_open",))
             items.append(child)
         self._service_items[ip] = items
@@ -347,7 +347,7 @@ class DetailPanel(ctk.CTkFrame):
         self._header.grid_columnconfigure(1, weight=1)
 
         self._toggle_btn = ctk.CTkButton(
-            self._header, text="â—€", width=26, height=26,
+            self._header, text="◀", width=26, height=26,
             fg_color="transparent", hover_color=pal.hover,
             text_color=pal.text_secondary, font=("Segoe UI", 12, "bold"),
             command=self.toggle,
@@ -374,7 +374,7 @@ class DetailPanel(ctk.CTkFrame):
         self._expanded = not self._expanded
         width = self._expanded_width if self._expanded else self._collapsed_width
         self.configure(width=width)
-        self._toggle_btn.configure(text="â–¶" if not self._expanded else "â—€")
+        self._toggle_btn.configure(text="▶" if not self._expanded else "◀")
         if self._expanded:
             self._scroll.grid()
         else:
@@ -400,15 +400,15 @@ class DetailPanel(ctk.CTkFrame):
         fields: list[tuple[str, str]] = [
             ("IP", dev.ip_address),
             ("Estado", "Activo" if dev.is_alive else "Inactivo"),
-            ("Nombre", dev.hostname or "â€”"),
+            ("Nombre", dev.hostname or "—"),
             ("Fabricante", dev.vendor_label),
             ("Modelo", dev.model_label),
-            ("DirecciÃ³n MAC", dev.mac_address or "â€”"),
+            ("Dirección MAC", dev.mac_address or "—"),
             ("Tipo", dev.device_type),
-            ("Sistema operativo", dev.os_name or "â€”"),
+            ("Sistema operativo", dev.os_name or "—"),
             ("TTL", dev.ttl_label),
             ("Latencia", dev.latency_label),
-            ("MÃ©todo de descubrimiento", dev.discovery_method or "â€”"),
+            ("Método de descubrimiento", dev.discovery_method or "—"),
             ("Puertos abiertos", dev.ports_compact()),
             ("Riesgo", str(dev.risk_score)),
         ]
@@ -456,7 +456,7 @@ class DetailPanel(ctk.CTkFrame):
                 p_lab.grid(row=rr, column=0, sticky="w", padx=(20, 8), pady=2)
                 p_val = ctk.CTkLabel(
                     self._fields_frame,
-                    text=f"{name} â€” {port.banner or '-'}",
+                    text=f"{name} — {port.banner or '-'}",
                     font=("Segoe UI", 10), text_color=pal.text_primary,
                     anchor="w",
                 )
@@ -543,9 +543,9 @@ class IPInspectorApp(ctk.CTk):
         self.config(menu=self._menu_bar)
 
         m_file = tk.Menu(self._menu_bar, tearoff=0)
-        m_file.add_command(label="Escanear redâ€¦", command=self._on_scan_click)
+        m_file.add_command(label="Escanear red…", command=self._on_scan_click)
         m_file.add_separator()
-        m_file.add_command(label="Exportar listaâ€¦", command=self._export_csv)
+        m_file.add_command(label="Exportar lista…", command=self._export_csv)
         m_file.add_separator()
         m_file.add_command(label="Salir", command=self.quit)
         self._menu_bar.add_cascade(label="Archivo", menu=m_file)
@@ -559,9 +559,9 @@ class IPInspectorApp(ctk.CTk):
         self._menu_bar.add_cascade(label="Vista", menu=m_view)
 
         m_cfg = tk.Menu(self._menu_bar, tearoff=0)
-        m_cfg.add_command(label="Preferenciasâ€¦", command=self._open_prefs)
-        m_cfg.add_command(label="Adaptadores de redâ€¦", command=self._show_adapters)
-        self._menu_bar.add_cascade(label="ConfiguraciÃ³n", menu=m_cfg)
+        m_cfg.add_command(label="Preferencias…", command=self._open_prefs)
+        m_cfg.add_command(label="Adaptadores de red…", command=self._show_adapters)
+        self._menu_bar.add_cascade(label="Configuración", menu=m_cfg)
 
         m_help = tk.Menu(self._menu_bar, tearoff=0)
         m_help.add_command(label="Acerca de IP Inspector", command=self._show_about)
@@ -589,7 +589,7 @@ class IPInspectorApp(ctk.CTk):
         toolbar.grid_columnconfigure(2, weight=1)
 
         self._scan_btn = ctk.CTkButton(
-            toolbar, text="â–¶  Explorar", width=120, height=32,
+            toolbar, text="▶  Explorar", width=120, height=32,
             fg_color=pal.accent, hover_color=pal.accent_hover,
             text_color=pal.accent_text, font=("Segoe UI", 11, "bold"),
             command=self._on_scan_click,
@@ -597,7 +597,7 @@ class IPInspectorApp(ctk.CTk):
         self._scan_btn.grid(row=0, column=0, padx=10, pady=6)
 
         self._pause_btn = ctk.CTkButton(
-            toolbar, text="â¸  Pausa", width=86, height=32,
+            toolbar, text="⏸  Pausa", width=86, height=32,
             fg_color="transparent", hover_color=pal.hover,
             text_color=pal.text_primary, font=("Segoe UI", 10),
             command=self._on_pause_click, state="disabled",
@@ -605,7 +605,7 @@ class IPInspectorApp(ctk.CTk):
         self._pause_btn.grid(row=0, column=1, padx=(0, 6), pady=6)
 
         self._stop_btn = ctk.CTkButton(
-            toolbar, text="â¹  Detener", width=90, height=32,
+            toolbar, text="⏹  Detener", width=90, height=32,
             fg_color="transparent", hover_color=pal.hover,
             text_color=pal.text_primary, font=("Segoe UI", 10),
             command=self._on_stop_click, state="disabled",
@@ -640,14 +640,14 @@ class IPInspectorApp(ctk.CTk):
         filter_lbl.grid(row=0, column=2, padx=(10, 6), sticky="e")
 
         self._filter_entry = ctk.CTkEntry(
-            ctrl, placeholder_text="Filtrar por IP, nombre o MACâ€¦",
+            ctrl, placeholder_text="Filtrar por IP, nombre o MAC…",
             width=220, height=30,
         )
         self._filter_entry.grid(row=0, column=3, padx=(0, 6), sticky="w")
         self._filter_entry.bind("<KeyRelease>", self._on_filter_change)
 
         self._filter_clear_btn = ctk.CTkButton(
-            ctrl, text="Ã—", width=28, height=30,
+            ctrl, text="×", width=28, height=30,
             fg_color="transparent", hover_color=pal.hover,
             text_color=pal.text_muted, font=("Segoe UI", 14, "bold"),
             command=self._clear_filter,
@@ -701,13 +701,13 @@ class IPInspectorApp(ctk.CTk):
         self._status_label.grid(row=0, column=0, padx=10, sticky="w")
 
         self._active_label = ctk.CTkLabel(
-            status, text="â— 0 activo", font=("Segoe UI", 9),
+            status, text="● 0 activo", font=("Segoe UI", 9),
             text_color=pal.state_ok, anchor="w",
         )
         self._active_label.grid(row=0, column=1, padx=10, sticky="w")
 
         self._inactive_label = ctk.CTkLabel(
-            status, text="â—‹ 0 inactivo", font=("Segoe UI", 9),
+            status, text="○ 0 inactivo", font=("Segoe UI", 9),
             text_color=pal.state_off, anchor="w",
         )
         self._inactive_label.grid(row=0, column=2, padx=10, sticky="w")
@@ -741,7 +741,7 @@ class IPInspectorApp(ctk.CTk):
         self._scan_btn.configure(state="disabled")
         self._pause_btn.configure(state="normal")
         self._stop_btn.configure(state="normal")
-        self._status_label.configure(text="Escaneandoâ€¦")
+        self._status_label.configure(text="Escaneando…")
 
         req = ScanRequest(target_range=target_range)
         self._scan_thread = threading.Thread(
@@ -763,7 +763,7 @@ class IPInspectorApp(ctk.CTk):
             pass
 
     def _on_pause_click(self) -> None:
-        # Pausa lÃ³gica: el escÃ¡ner respeta el evento de parada; aquÃ­ simplemente
+        # Pausa lógica: el escáner respeta el evento de parada; aquí simplemente
         # cambiamos el estado visual. Una pausa real requiere soporte en el
         # worker; por ahora usamos "detener" como pausa segura.
         self._on_stop_click()
@@ -804,7 +804,7 @@ class IPInspectorApp(ctk.CTk):
         if phase == "device" and ev.device:
             self._on_device_event(ev.device)
         elif phase == "progress":
-            self._status_label.configure(text=ev.message or "Escaneandoâ€¦")
+            self._status_label.configure(text=ev.message or "Escaneando…")
         elif phase == "done":
             self._scan_finished()
         elif phase == "error" or ev.is_error:
@@ -850,9 +850,9 @@ class IPInspectorApp(ctk.CTk):
         unknown = len(self._devices) - active - inactive
         total = len(self._devices)
         if self._active_label:
-            self._active_label.configure(text=f"â— {active} activo")
+            self._active_label.configure(text=f"● {active} activo")
         if self._inactive_label:
-            self._inactive_label.configure(text=f"â—‹ {inactive} inactivo")
+            self._inactive_label.configure(text=f"○ {inactive} inactivo")
         if self._unknown_label:
             self._unknown_label.configure(text=f"? {unknown} desconocido")
         if self._status_label and not self._scanning:
@@ -878,7 +878,7 @@ class IPInspectorApp(ctk.CTk):
         else:
             messagebox.showinfo(
                 "Sin puerto web",
-                f"El dispositivo {ip} no tiene ningÃºn puerto web detectado.",
+                f"El dispositivo {ip} no tiene ningún puerto web detectado.",
             )
 
     def _toggle_detail(self) -> None:
@@ -938,7 +938,7 @@ class IPInspectorApp(ctk.CTk):
         try:
             with open(path, "w", newline="", encoding="utf-8") as fh:
                 w = csv.writer(fh)
-                w.writerow(["Estado", "Nombre", "IP", "Fabricante", "DirecciÃ³n MAC", "Puertos"])
+                w.writerow(["Estado", "Nombre", "IP", "Fabricante", "Dirección MAC", "Puertos"])
                 for d in self._devices.values():
                     w.writerow([
                         "Activo" if d.is_alive else "Inactivo",
@@ -954,7 +954,7 @@ class IPInspectorApp(ctk.CTk):
             messagebox.showerror("Error", str(exc))
 
     def _open_prefs(self) -> None:
-        messagebox.showinfo("Preferencias", "Las preferencias se abren aquÃ­ en la prÃ³xima versiÃ³n.")
+        messagebox.showinfo("Preferencias", "Las preferencias se abren aquí en la próxima versión.")
 
     def _show_adapters(self) -> None:
         try:
@@ -962,7 +962,7 @@ class IPInspectorApp(ctk.CTk):
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Error", str(exc))
             return
-        lines = [f"{a.name} â€” {a.address} ({a.network})" for a in adapters]
+        lines = [f"{a.name} — {a.address} ({a.network})" for a in adapters]
         messagebox.showinfo("Adaptadores de red", "\n".join(lines) or "No se encontraron adaptadores.")
 
     def _show_about(self) -> None:
@@ -975,8 +975,8 @@ class IPInspectorApp(ctk.CTk):
         messagebox.showinfo(
             "Ayuda",
             "1. Escribe un rango IP (ej. 192.168.1.1-100 o 192.168.1.0/24).\n"
-            "2. Pulsa Explorar (â–¶).\n"
-            "3. Espera a Â«TerminadoÂ» (un /23 puede tardar ~60 s).\n"
+            "2. Pulsa Explorar (▶).\n"
+            "3. Espera a «Terminado» (un /23 puede tardar ~60 s).\n"
             "4. Expande un dispositivo para ver sus servicios.\n"
             "5. Usa el panel Detalle para ver la ficha completa.",
         )
