@@ -317,7 +317,7 @@ class AddressMap(tk.Canvas):
     def _colour(self, ip: str) -> str:
         pal = theme.PALETTE
         return {
-            "online": pal.accent, "new": pal.new, "risk": pal.warn, "danger": pal.danger,
+            "online": pal.accent, "new": pal.ink, "risk": pal.warn, "danger": pal.danger,
             "favorite": pal.accent,
         }.get(self._states.get(ip, ""), pal.empty_cell)
 

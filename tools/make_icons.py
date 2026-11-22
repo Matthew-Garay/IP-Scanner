@@ -26,9 +26,9 @@ GRID = 64
 OVERSAMPLE = 8
 CANVAS = GRID * OVERSAMPLE
 
-INK = (61, 76, 92, 255)          # #3D4C5C  line colour
-TEAL = (11, 110, 121, 255)       # #0B6E79  brand accent
-TEAL_TINT = (213, 236, 238, 255)
+INK = (32, 32, 32, 255)          # #202020  line colour (black)
+ACCENT = (0, 99, 177, 255)         # #0063B1  brand accent (blue)
+ACCENT_TINT = (221, 235, 247, 255)
 WHITE = (255, 255, 255, 255)
 
 ROW_SIZES = (16, 20, 24, 32)
@@ -96,11 +96,11 @@ class Pen:
 # Device glyphs
 # --------------------------------------------------------------------------- #
 def computer(p: Pen, accent: bool = False):
-    p.rect(7, 10, 57, 43, r=4, fill=TEAL_TINT if accent else None)
+    p.rect(7, 10, 57, 43, r=4, fill=ACCENT_TINT if accent else None)
     p.line((32, 44), (32, 51))
     p.line((21, 53), (43, 53))
     if accent:
-        p.line((22, 27), (29, 33), (42, 20), colour=TEAL)
+        p.line((22, 27), (29, 33), (42, 20), colour=ACCENT)
 
 
 def laptop(p: Pen):
@@ -256,11 +256,11 @@ def nav_monitor(p: Pen):
 
 
 def tool_scan(p: Pen):
-    p.polygon([(19, 12), (19, 52), (51, 32)], fill=TEAL, colour=TEAL)
+    p.polygon([(19, 12), (19, 52), (51, 32)], fill=ACCENT, colour=ACCENT)
 
 
 def tool_stop(p: Pen):
-    p.fill_rect(16, 16, 48, 48, r=4, colour=(201, 42, 42, 255))
+    p.fill_rect(16, 16, 48, 48, r=4, colour=INK)
 
 
 def tool_options(p: Pen):
@@ -302,10 +302,10 @@ INTERFACE = {
 # Status badges (drawn into the corner of a device icon at runtime)
 # --------------------------------------------------------------------------- #
 BADGES = {
-    "online": (47, 158, 68, 255),
-    "new": (25, 113, 194, 255),
-    "risk": (232, 89, 12, 255),
-    "danger": (201, 42, 42, 255),
+    "online": (16, 124, 16, 255),
+    "new": (0, 0, 0, 255),
+    "risk": (216, 94, 0, 255),
+    "danger": (196, 43, 28, 255),
     "favorite": (242, 169, 0, 255),
 }
 
@@ -338,7 +338,7 @@ def app_mark() -> Image.Image:
     draw = ImageDraw.Draw(image)
     unit = CANVAS / GRID
     draw.rounded_rectangle((2 * unit, 2 * unit, 62 * unit, 62 * unit), radius=13 * unit,
-                           fill=TEAL)
+                           fill=ACCENT)
     used = {(0, 0), (1, 0), (3, 0), (1, 1), (2, 1), (0, 2), (2, 2), (3, 2), (1, 3), (3, 3)}
     for row in range(4):
         for column in range(4):

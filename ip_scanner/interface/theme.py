@@ -4,9 +4,10 @@ Design notes
 ------------
 * Neutral surfaces (white work areas on a light grey chrome) with hairline
   borders, so the data is what stands out.
-* One accent, a deep teal, used only for the primary action, the current
-  navigation item, selection and the address map. Status colours appear
-  only where they carry meaning (online, new, needs attention).
+* White, black and one blue accent. Blue is used only for the primary
+  action, the current navigation item, selection and the address map.
+  Status colours appear only where they carry meaning (online, needs
+  attention, critical); new devices are marked in black.
 * Segoe UI throughout: the Windows system face, at a small type scale
   (9 / 10 / 13 pt) with weight, not size, carrying hierarchy.
 
@@ -27,23 +28,25 @@ from tkinter import ttk
 
 @dataclass(frozen=True)
 class Palette:
-    ink: str = "#1D2833"           # primary text
-    ink_2: str = "#55626F"         # secondary text
-    ink_3: str = "#8792A0"         # tertiary text, placeholders
+    # System colours: white surfaces, black text, one blue accent.
+    ink: str = "#000000"           # primary text
+    ink_2: str = "#404040"         # secondary text
+    ink_3: str = "#767676"         # tertiary text, placeholders
     paper: str = "#FFFFFF"         # work surfaces
-    chrome: str = "#F2F4F6"        # window background, rails, bars
-    hairline: str = "#D9DEE3"      # borders and dividers
-    hover: str = "#E8ECEF"
-    accent: str = "#0B6E79"        # teal: primary action, selection, map
-    accent_hover: str = "#095A63"
-    accent_soft: str = "#DCEFF1"   # selected row, current nav item
-    accent_muted: str = "#8FBFC4"
-    ok: str = "#2F9E44"
-    warn: str = "#E8590C"
-    danger: str = "#C92A2A"
-    new: str = "#1971C2"
-    row_alt: str = "#FAFBFC"
-    empty_cell: str = "#E6EAEE"
+    chrome: str = "#F3F3F3"        # window background, rails, bars
+    hairline: str = "#D4D4D4"      # borders and dividers
+    hover: str = "#EBEBEB"
+    accent: str = "#0063B1"        # blue: primary action, selection, map
+    accent_hover: str = "#004E8C"
+    accent_soft: str = "#DDEBF7"   # selected row, current nav item
+    accent_muted: str = "#8AB4DE"
+    # Status colours, used only where they carry meaning (badges, map).
+    ok: str = "#107C10"
+    warn: str = "#D85E00"
+    danger: str = "#C42B1C"
+    new: str = "#000000"           # new devices: black, so it never reads as the accent
+    row_alt: str = "#FAFAFA"
+    empty_cell: str = "#E6E6E6"
 
     # Aliases kept for older call sites.
     @property

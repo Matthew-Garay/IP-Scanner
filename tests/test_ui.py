@@ -234,6 +234,49 @@ class AutoRescan(WindowTestCase):
         self.assertEqual(Settings.load().auto_rescan, 0)
 
 
+class AutomaticRange(WindowTestCase):
+    """The range follows this computer's network until the user types one."""
+
+    def setUp(self):
+        super().setUp()
+        self.app._range_is_auto = True
+        self.app._detected_range = ""
+
+    def test_detected_network_fills_the_range(self):
+        self.app._on_network_detected("192.168.7.0/24")
+        self.assertEqual(self.app._range_entry.get(), "192.168.7.0/24")
+        self.assertIn("detected", self.app._range_info.cget("text"))
+
+    def test_moving_to_another_network_updates_the_range(self):
+        self.app._on_network_detected("192.168.7.0/24")
+        self.app._on_network_detected("10.20.0.0/24")
+        self.assertEqual(self.app._range_entry.get(), "10.20.0.0/24")
+        self.assertIn("Network changed", self.app._status_label.cget("text"))
+
+    def test_a_typed_range_is_never_overwritten(self):
+        self.app._on_network_detected("192.168.7.0/24")
+        self.app._range_entry.set("10.9.9.0/24")
+        self.app._on_range_typed()
+        self.app._on_network_detected("10.20.0.0/24")
+        self.assertEqual(self.app._range_entry.get(), "10.9.9.0/24")
+
+    def test_typing_the_detected_range_back_resumes_auto_mode(self):
+        self.app._on_network_detected("192.168.7.0/24")
+        self.app._range_entry.set("10.9.9.0/24")
+        self.app._on_range_typed()
+        self.app._range_entry.set("192.168.7.0/24")
+        self.app._on_range_typed()
+        self.app._on_network_detected("10.20.0.0/24")
+        self.assertEqual(self.app._range_entry.get(), "10.20.0.0/24")
+
+    def test_no_change_while_scanning(self):
+        self.app._on_network_detected("192.168.7.0/24")
+        self.app._scanning = True
+        self.app._on_network_detected("10.20.0.0/24")
+        self.assertEqual(self.app._range_entry.get(), "192.168.7.0/24")
+        self.app._scanning = False
+
+
 class Options(WindowTestCase):
 
     def test_custom_profile_builds_a_request_with_typed_ports(self):

@@ -39,7 +39,7 @@ Each layer imports only from the layers above it in this list:
 - All source files are UTF-8; pass `encoding="utf-8"` to `open()`/`write_text`.
 - The GUI uses Tkinter/ttk only, styled in `theme.setup_style` (flat styles on
   `clam`). Do not add GUI libraries. Use the colour tokens in `theme.PALETTE`;
-  the teal accent is reserved for the primary action, selection and the map.
+  the blue accent is reserved for the primary action, selection and the map.
 - Never set fonts through `option_add("*Font")`: it overrides every ttk
   style. Fonts belong in the ttk styles. Never name an attribute `_options`, `_w`, `tk` or
   another `tkinter.Misc` internal on the window: `self._options` once broke

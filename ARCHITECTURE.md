@@ -104,9 +104,9 @@ Each category key matches an icon in `assets/icons/<key>_<size>.png`.
 
 ## Visual design
 
-One accent colour (teal `#0B6E79`) for the primary action, the current
+White surfaces, black text and one blue accent (`#0063B1`) for the primary action, the current
 view, selection and the address map; neutral white and light-grey surfaces
 with hairline borders; Segoe UI with weight, not size, carrying hierarchy.
-Status colours (green, blue for new, orange, red) appear only on the row
+Status colours (green, black for new, orange, red) appear only on the row
 badges and the map. Icons are outline glyphs on a 64-unit grid drawn by
 `tools/make_icons.py`.

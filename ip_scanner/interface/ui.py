@@ -100,6 +100,8 @@ APP_VERSION = "2.1"
 WINDOW_SIZE = (1280, 760)
 WINDOW_MINIMUM = (900, 520)
 POLL_INTERVAL_MS = 100
+#: How often the window checks whether the computer moved to another network.
+NETWORK_CHECK_MS = 15000
 
 #: Events processed per poll, so a burst never freezes the window.
 MAX_EVENTS_PER_POLL = 400
@@ -177,6 +179,11 @@ class ScannerApp(tk.Tk):
         self._auto_run = False
         #: Shared-folder lookups already done (or running) per IP.
         self._shares_requested: set[str] = set()
+        #: Range detected from this computer's own network, and whether the
+        #: range box still shows it (typing a range turns auto mode off).
+        self._detected_range = ""
+        self._range_is_auto = True
+        self._detecting = False
 
         self._build_menu_bar()
         self._build_layout()
@@ -187,6 +194,7 @@ class ScannerApp(tk.Tk):
             "No results yet.\nPress Scan (F5) to look for devices on your network.")
         self._set_status("Ready")
         self._schedule(POLL_INTERVAL_MS, self._poll_queue)
+        self._detect_network()
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         self.deiconify()
         if self.settings.window_zoomed:
@@ -315,7 +323,7 @@ class ScannerApp(tk.Tk):
         bar.add_cascade(label="Tools", menu=m_tools)
 
         m_cfg = tk.Menu(bar, tearoff=0)
-        m_cfg.add_command(label="Use my local network", command=self._use_local_network)
+        m_cfg.add_command(label="Detect my network range", command=self._use_local_network)
         m_cfg.add_command(label="Clear address history", command=self._clear_history)
         m_cfg.add_command(label="Forget known devices", command=self._forget_known)
         if sys.platform == "win32" and not self._elevated:
@@ -523,7 +531,7 @@ class ScannerApp(tk.Tk):
 
         # Packed before the left-hand controls so it keeps its room when the
         # window is narrow; the combo boxes shrink instead.
-        self._filter_entry = ttk.Entry(bar, width=22)
+        self._filter_entry = ttk.Entry(bar, width=16)
         self._filter_entry.pack(side="right")
         self._filter_entry.bind("<KeyRelease>", lambda _e: self._apply_filter())
         self._filter_entry.bind("<Escape>", lambda _e: self._clear_filter())
@@ -538,12 +546,12 @@ class ScannerApp(tk.Tk):
         self._stop_btn.pack(side="left", padx=(theme.px(6), theme.px(14)))
 
         ttk.Label(bar, text="Range", style="Secondary.TLabel").pack(side="left")
-        self._range_entry = ttk.Combobox(bar, width=22, values=self.settings.range_history)
+        self._range_entry = ttk.Combobox(bar, width=19, values=self.settings.range_history)
         self._range_entry.pack(side="left", padx=(theme.px(6), theme.px(6)))
         self._range_entry.bind("<Return>", lambda _e: self._on_scan_click())
-        self._range_entry.bind("<KeyRelease>", lambda _e: self._preview_range())
-        self._range_entry.bind("<<ComboboxSelected>>", lambda _e: self._preview_range())
-        self._range_info = ttk.Label(bar, text="", width=14, style="PaperMuted.TLabel")
+        self._range_entry.bind("<KeyRelease>", self._on_range_typed)
+        self._range_entry.bind("<<ComboboxSelected>>", lambda _e: self._on_range_typed())
+        self._range_info = ttk.Label(bar, text="", width=21, style="PaperMuted.TLabel")
         self._range_info.pack(side="left")
 
         ttk.Label(bar, text="Profile", style="Secondary.TLabel").pack(side="left",
@@ -768,9 +776,10 @@ class ScannerApp(tk.Tk):
         self._auto_menu.set(next((k for k, v in AUTO_RESCAN.items() if v == s.auto_rescan), "Off"))
         self._tree.set_marks(self._favorites)
         self._tree.set_filter("", only_open=s.only_open)
-        target = s.last_range or local_network_hint()
-        if target:
-            self._range_entry.set(target)
+        # The real range arrives from _detect_network a moment later; until
+        # then show the last one used so the box is never empty.
+        if s.last_range:
+            self._range_entry.set(s.last_range)
         self._on_profile_change(initial=True)
 
     def _save_options(self) -> None:
@@ -818,7 +827,7 @@ class ScannerApp(tk.Tk):
             if choice.startswith(adapter.name + " ("):
                 self._range_entry.set(adapter.sweep_range)
                 break
-        self._preview_range()
+        self._on_range_typed()
 
     def _selected_interface(self) -> str:
         choice = self._adapter_menu.get()
@@ -851,9 +860,46 @@ class ScannerApp(tk.Tk):
         if plan.is_empty:
             self._range_info.configure(text="Invalid range", style="Warn.TLabel")
         else:
-            self._range_info.configure(
-                text=f"{plan.total} addresses" + (" (capped)" if plan.truncated else ""),
-                style="Muted.TLabel")
+            note = " (capped)" if plan.truncated else (
+                " (detected)" if self._range_is_auto and text == self._detected_range else "")
+            self._range_info.configure(text=f"{plan.total} addresses{note}",
+                                       style="PaperMuted.TLabel")
+
+    # -- automatic network range ------------------------------------------ #
+    def _detect_network(self) -> None:
+        """Work out this computer's network in the background, then repeat."""
+        if not self._detecting:
+            self._detecting = True
+
+            def work() -> None:
+                try:
+                    detected = local_network_hint()
+                except Exception:  # noqa: BLE001 - detection is a convenience
+                    detected = ""
+                self._call_soon(lambda: self._on_network_detected(detected))
+
+            threading.Thread(target=work, name="detect-network", daemon=True).start()
+        self._schedule(NETWORK_CHECK_MS, self._detect_network)
+
+    def _on_network_detected(self, detected: str) -> None:
+        self._detecting = False
+        if not detected:
+            return
+        changed = bool(self._detected_range) and detected != self._detected_range
+        self._detected_range = detected
+        if not self._range_is_auto or self._scanning:
+            return
+        if self._range_entry.get().strip() != detected:
+            self._range_entry.set(detected)
+            if changed:
+                self._set_status(f"Network changed. The range is now {detected}.")
+        self._preview_range()
+
+    def _on_range_typed(self, _event=None) -> None:
+        """Typing or picking a range takes over from automatic detection."""
+        text = self._range_entry.get().strip()
+        self._range_is_auto = not text or text == self._detected_range
+        self._preview_range()
 
     def _use_local_network(self) -> None:
         hint = local_network_hint()
@@ -861,6 +907,8 @@ class ScannerApp(tk.Tk):
             messagebox.showwarning(APP_NAME, "No active local network was found.", parent=self)
             return
         self._range_entry.set(hint)
+        self._detected_range = hint
+        self._range_is_auto = True
         self._adapter_menu.set(AUTO_ADAPTER)
         self._preview_range()
 
@@ -1151,6 +1199,7 @@ class ScannerApp(tk.Tk):
             return
         network = ipaddress.ip_network(f"{ip}/24", strict=False)
         self._range_entry.set(str(network))
+        self._on_range_typed()
         self._on_scan_click()
 
     # ------------------------------------------------------------------ #
@@ -1521,7 +1570,7 @@ class ScannerApp(tk.Tk):
             self._select_from_map(ip)
         else:
             self._range_entry.set(ip)
-            self._preview_range()
+            self._on_range_typed()
             self._set_status(f"{ip} is not in the current results. Press Scan to check it.")
 
     def _on_fav_delete(self, _event=None) -> None:
@@ -1594,6 +1643,9 @@ class ScannerApp(tk.Tk):
         self._detail.set_device(None)
         self._last_range = str(session.get("range", ""))
         self._reset_map(self._last_range)
+        if self._last_range:
+            self._range_entry.set(self._last_range)
+            self._on_range_typed()
         for device in devices:
             self._on_device_event(device)
         if self._last_range:

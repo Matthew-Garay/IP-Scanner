@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.1
+
+- System colours: white surfaces, black text and lines, one blue accent.
+  Status colours (green, orange, red) only on badges and the address map;
+  new devices are marked in black.
+- The network range is detected automatically at start-up and re-checked
+  every 15 seconds: moving to another network updates it. A range you type
+  or pick is never overwritten; Settings › Detect my network range goes
+  back to automatic.
+
 ## 3.0
 
 - Renamed the project to IP Scanner (package `ip_scanner`, command
