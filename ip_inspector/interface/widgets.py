@@ -60,10 +60,15 @@ def risk_label(score: int) -> str:
     return "-"
 
 
-def device_row(device: Device) -> tuple[str, ...]:
+def device_key(device: Device) -> str:
+    """Stable identity of a device across scans: its MAC, else its IP."""
+    return device.mac_address or device.ip_address
+
+
+def device_row(device: Device, alias: str = "") -> tuple[str, ...]:
     """Cell values of a device row, in :data:`TREE_COLUMNS` order."""
     return (
-        device.hostname or "-",
+        alias or device.hostname or "-",
         device.ip_address,
         device.vendor or device.model or "-",
         device.mac_address or "-",
@@ -74,12 +79,12 @@ def device_row(device: Device) -> tuple[str, ...]:
     )
 
 
-def matches_filter(device: Device, text: str) -> bool:
+def matches_filter(device: Device, text: str, alias: str = "") -> bool:
     """True when the quick filter text appears in any visible field."""
     if not text:
         return True
     text = text.lower()
-    haystack = " ".join((
+    haystack = " ".join((alias,
         device.ip_address, device.hostname or "", device.mac_address or "",
         device.vendor or "", device.model or "", device.device_type or "",
         device.os_name or "", device.ports_compact(),
@@ -123,6 +128,8 @@ class DeviceTree(ctk.CTkFrame):
         self._devices: dict[str, Device] = {}
         self._favorites: set[str] = set()
         self._new: set[str] = set()
+        #: ip -> custom name typed by the user.
+        self._aliases: dict[str, str] = {}
         self._filter = ""
         self._only_open = False
         self._sort_col = COL_IP
@@ -190,13 +197,23 @@ class DeviceTree(ctk.CTkFrame):
             self._only_open = only_open
         self._rebuild()
 
-    def set_marks(self, favorites: set[str], new: set[str] | None = None) -> None:
+    def set_marks(self, favorites: set[str], new: set[str] | None = None,
+                  aliases: dict[str, str] | None = None) -> None:
         self._favorites = set(favorites)
         if new is not None:
             self._new = set(new)
+        if aliases is not None:
+            self._aliases = dict(aliases)
         for ip, device in self._devices.items():
             if self._tree.exists(self._iid(ip)):
                 self.upsert_device(device)
+
+    def set_alias(self, ip: str, name: str) -> None:
+        """Remember a custom name for one row (applied on its next update)."""
+        if name:
+            self._aliases[ip] = name
+        else:
+            self._aliases.pop(ip, None)
 
     def upsert_device(self, device: Device) -> None:
         """Add or update a single device row without touching the others."""
@@ -216,11 +233,12 @@ class DeviceTree(ctk.CTkFrame):
             tags, text = ("risk",), "●"
         else:
             tags, text = ("dev",), "●"
+        values = device_row(device, self._aliases.get(ip, ""))
         if exists:
-            self._tree.item(iid, text=text, values=device_row(device), tags=tags)
+            self._tree.item(iid, text=text, values=values, tags=tags)
         else:
             self._tree.insert("", self._insert_index(device), iid=iid, text=text,
-                              values=device_row(device), tags=tags)
+                              values=values, tags=tags)
         self._fill_services(device)
 
     def select(self, ip: str) -> None:
@@ -249,7 +267,7 @@ class DeviceTree(ctk.CTkFrame):
     def _visible(self, device: Device) -> bool:
         if self._only_open and not open_ports(device):
             return False
-        return matches_filter(device, self._filter)
+        return matches_filter(device, self._filter, self._aliases.get(device.ip_address, ""))
 
     def _sort_key(self, device: Device):
         if self._sort_col == COL_IP:
@@ -258,7 +276,7 @@ class DeviceTree(ctk.CTkFrame):
             return (len(open_ports(device)), ip_key(device.ip_address))
         if self._sort_col == COL_RISK:
             return (device.risk_score, ip_key(device.ip_address))
-        value = device_row(device)[self._sort_col]
+        value = device_row(device, self._aliases.get(device.ip_address, ""))[self._sort_col]
         return (value == "-", value.lower(), ip_key(device.ip_address))
 
     def _insert_index(self, device: Device) -> int | str:
@@ -343,6 +361,7 @@ class DetailPanel(ctk.CTkFrame):
         super().__init__(master, fg_color="transparent", width=width)
         self._expanded = True
         self._device: Device | None = None
+        self._label_info: dict = {}
         self._row_widgets: list = []
         self._build(width)
         self._render()
@@ -392,8 +411,10 @@ class DetailPanel(ctk.CTkFrame):
             self._scroll.grid_remove()
             self._title.grid_remove()
 
-    def set_device(self, device: Device | None) -> None:
+    def set_device(self, device: Device | None, label: dict | None = None) -> None:
+        """Show a device; ``label`` carries the user's custom name and note."""
         self._device = device
+        self._label_info = label or {}
         self._render()
 
     def _label(self, text, row, col=0, bold=False, color="text_primary", **grid):
@@ -423,9 +444,14 @@ class DetailPanel(ctk.CTkFrame):
                         color="text_muted", columnspan=2, pady=8)
             return
 
-        fields = [
+        fields = []
+        if self._label_info.get("name"):
+            fields.append(("Custom name", self._label_info["name"]))
+        if self._label_info.get("note"):
+            fields.append(("Note", self._label_info["note"]))
+        fields += [
             ("IP", dev.ip_address),
-            ("Name", dev.hostname or "—"),
+            ("Hostname", dev.hostname or "—"),
             ("Vendor", dev.vendor or "—"),
             ("Model", dev.model or "—"),
             ("MAC", dev.mac_address or "—"),

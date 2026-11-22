@@ -76,6 +76,12 @@ touch the user's preferences.
   binary (MySQL) that must never reach the table.
 - Risk is computed at the end of a scan with `analysis.exposure`
   (offline heuristics, no extra traffic).
+- `cli.py` must stay headless: it may import core, analysis, actions and
+  nettools, never `interface`. `tests/test_cli.py` drives it with a fake
+  scanner.
+- Custom names/notes (`settings.device_labels`), "gone" detection
+  (`settings.last_scan`, only compared for the same range) and auto-rescan
+  live in `ui.py`; all key devices with `widgets.device_key`.
 - New-device detection keys on MAC (IP when no MAC). The first scan only
   builds the baseline; *Settings › Forget known devices* resets it.
 - CustomTkinter colours are `(light, dark)` pairs from `widgets.c()`; native

@@ -106,6 +106,11 @@ FAST_LIVENESS_PORTS: tuple[int, ...] = (445, 135, 3389, 22)
 #: dead or filtered and belongs in the full sweep anyway.
 FAST_LIVENESS_TIMEOUT = 0.15
 
+#: Hosts that answered no probe at all get a second, slower pass, but only
+#: for port lists up to this size: a Full sweep of firewalled hosts would
+#: otherwise double its slowest part.
+RETRY_MAX_PORTS = 256
+
 
 class NetworkScanner:
     """
@@ -716,11 +721,50 @@ class NetworkScanner:
                  for port in request.ports),
             ))
 
+        self._retry_silent_hosts(devices, request, results)
+
         for device in devices:
             device.open_ports = sorted(
                 results[device.ip_address], key=lambda port: port.number
             )
         self._emit(ScannerEvent("Ports", "Port scan complete", total, total))
+
+    def _retry_silent_hosts(self, devices: list[Device], request: ScanRequest,
+                            results: dict[str, list[Port]]) -> None:
+        """
+        Second, more patient pass for live hosts where every probe timed out.
+
+        A host that is known to be up but answered *nothing* -- not even a
+        RST -- usually hit a momentary stall (Wi-Fi power saving, a busy
+        router) during a short-timeout sweep. Seen on a real LAN: the router
+        intermittently came back with no ports under the 0.4 s Quick timeout
+        while 53 and 80 were open. Retrying only those hosts, with double the
+        timeout, recovers them at the cost of one extra wave.
+        """
+        if self.is_stopping or len(request.ports) > RETRY_MAX_PORTS:
+            return
+        silent = [d for d in devices
+                  if results[d.ip_address]
+                  and all(p.state == "filtered" for p in results[d.ip_address])]
+        if not silent:
+            return
+        timeout = min(request.port_timeout * 2, 2.0)
+        pairs = [(d, port) for d in silent for port in request.ports]
+
+        def probe(pair: tuple[Device, int]) -> tuple[str, Port]:
+            device, port_number = pair
+            if self.is_stopping:
+                return device.ip_address, Port(port_number, "filtered",
+                                               KNOWN_SERVICES.get(port_number, ""))
+            return device.ip_address, self._probe_port_sync(
+                device.ip_address, port_number, timeout)
+
+        with ThreadPoolExecutor(max_workers=max(1, min(request.concurrency, len(pairs))),
+                                thread_name_prefix="portscan-retry") as pool:
+            retried: dict[str, list[Port]] = {d.ip_address: [] for d in silent}
+            for ip, port in pool.map(probe, pairs):
+                retried[ip].append(port)
+        results.update(retried)
 
     async def _tcp_ping(self, ip: str, port: int, timeout: float) -> float | None:
         """Latency in milliseconds if the port accepts a connection."""

@@ -14,6 +14,8 @@ ip_inspector/
   interface/   Everything that touches tkinter
   i18n.py      Text catalogue (device types, findings); the app runs in English
   main.py      Development entry point (python -m ip_inspector.main)
+  cli.py       Command-line scanner (headless: no tkinter import)
+  __main__.py  python -m ip_inspector: the window, or the CLI when given arguments
   launcher.py  PyInstaller entry point
 tests/         Regression tests (standard library only)
 ```
@@ -58,6 +60,22 @@ Write a function in `nettools/tools.py` that returns a `ToolResult` (never
 raise; set `ok=False` and `error` instead), then add one `Tool(...)` entry to
 `TOOLS` in `interface/tools_tab.py`. The form, the worker thread and the
 console output are built from that entry.
+
+## Port scan details
+
+The port sweep runs one thread-pool job per (host, port) pair. Live hosts
+where *every* probe timed out get a second pass with double the timeout
+(`NetworkScanner._retry_silent_hosts`, port lists up to 256): on Wi-Fi a
+momentary stall otherwise hid a router's open ports under the 0.4 s Quick
+timeout.
+
+## Persistent state
+
+`interface/settings.py` stores, per user: scan options, favorites, the
+devices ever seen (NEW flags), the previous complete scan of a range (to
+list what is *gone*), custom device names/notes and the auto-rescan
+interval. Devices are keyed by MAC, or by IP when the MAC is unknown, so a
+name survives a DHCP address change.
 
 ## Adding a scan profile
 

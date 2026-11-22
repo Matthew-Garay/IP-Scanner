@@ -31,6 +31,14 @@ class Settings:
     favorites: list[str] = field(default_factory=list)
     #: MAC (or IP when no MAC) -> first time seen, to flag new devices.
     known_devices: dict[str, str] = field(default_factory=dict)
+    #: MAC (or IP) -> {"name": custom name, "note": free text}.
+    device_labels: dict[str, dict] = field(default_factory=dict)
+    #: Devices of the last complete scan, MAC (or IP) -> {"ip", "name"},
+    #: and the range it covered, to report what disappeared.
+    last_scan: dict[str, dict] = field(default_factory=dict)
+    last_scan_range: str = ""
+    #: Minutes between automatic rescans; 0 disables them.
+    auto_rescan: int = 0
 
     @classmethod
     def load(cls, path: Path | None = None) -> "Settings":

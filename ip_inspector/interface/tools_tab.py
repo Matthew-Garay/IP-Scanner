@@ -208,6 +208,7 @@ class ToolsTab(ctk.CTkFrame):
                     text_color=c("text_primary"), border_width=1, border_color=c("border"),
                     font=("Segoe UI", 10))
         ctk.CTkButton(bar, text="Copy output", command=self._copy, **flat).pack(side="left")
+        ctk.CTkButton(bar, text="Save…", command=self._save, **flat).pack(side="left", padx=(6, 0))
         ctk.CTkButton(bar, text="Clear", command=self.clear, **flat).pack(side="left", padx=6)
         self._state_label = ctk.CTkLabel(bar, text="", font=("Segoe UI", 9),
                                          text_color=c("text_muted"))
@@ -335,6 +336,28 @@ class ToolsTab(ctk.CTkFrame):
         self._console.configure(state="normal")
         self._console.delete("1.0", "end")
         self._console.configure(state="disabled")
+
+    def _save(self) -> None:
+        text = self.console_text()
+        if not text:
+            self._state_label.configure(text="Nothing to save yet")
+            return
+        from tkinter import filedialog
+
+        path = filedialog.asksaveasfilename(
+            title="Save tool output", defaultextension=".txt",
+            filetypes=[("Text", "*.txt"), ("Log", "*.log")],
+            initialfile=f"ip_inspector_tools_{datetime.now():%Y%m%d_%H%M}",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(text + "\n")
+        except OSError as exc:
+            self._state_label.configure(text=f"Could not save: {exc}")
+            return
+        self._state_label.configure(text=f"Saved to {path}")
 
     def _copy(self) -> None:
         self.clipboard_clear()

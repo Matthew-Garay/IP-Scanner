@@ -64,6 +64,7 @@ from .widgets import (
     DetailPanel,
     DeviceTree,
     c,
+    device_key,
     device_row,
     ip_key,
     matches_filter,
@@ -108,6 +109,8 @@ PHASE_TEXT = {
 TIMEOUTS = ("0.2", "0.3", "0.5", "1.0", "2.0")
 THREADS = ("100", "250", "500", "1000", "1500", "2000")
 AUTO_ADAPTER = "Auto (default route)"
+#: Auto-rescan choices shown in the options row -> minutes (0 = off).
+AUTO_RESCAN = {"Off": 0, "5 min": 5, "15 min": 15, "30 min": 30, "60 min": 60}
 
 TAB_SCANNER = "Scanner"
 TAB_FAVORITES = "Favorites"
@@ -148,6 +151,11 @@ class IPInspectorApp(ctk.CTk):
         self._outcome = ""
         self._after_jobs: list[str] = []
         self._options_visible = False
+        #: Devices of the previous scan of this range that did not answer now.
+        self._gone: list[dict] = []
+        self._auto_job: str | None = None
+        self._auto_due = 0.0
+        self._auto_run = False
 
         self._build_menu_bar()
         self._build_layout()
@@ -208,6 +216,8 @@ class IPInspectorApp(ctk.CTk):
         m_view.add_command(label="Scan options", accelerator="F8", command=self._toggle_options)
         m_view.add_command(label="Expand all services", command=lambda: self._tree.expand_all(True))
         m_view.add_command(label="Collapse all", command=lambda: self._tree.expand_all(False))
+        m_view.add_command(label="Changes since last scan…", accelerator="Ctrl+D",
+                           command=self._show_changes)
         m_view.add_separator()
         m_view.add_command(label="Light theme", command=lambda: self._set_appearance("light"))
         m_view.add_command(label="Dark theme", command=lambda: self._set_appearance("dark"))
@@ -251,6 +261,8 @@ class IPInspectorApp(ctk.CTk):
             ("<Control-r>", self._rescan_selected), ("<F1>", self._show_help),
             ("<F8>", self._toggle_options), ("<F9>", self._toggle_detail),
             ("<Control-f>", self._focus_filter),
+            ("<Control-d>", self._show_changes),
+            ("<F2>", self._rename_selected),
             ("<Control-t>", lambda: self._tabview.set(TAB_TOOLS)),
             ("<Control-m>", lambda: self._tabview.set(TAB_MONITOR)),
         ):
@@ -292,6 +304,7 @@ class IPInspectorApp(ctk.CTk):
             "HTTP headers", {"url": f"{'https' if web in (443, 8443) else 'http'}://{i}"
                              + ("" if web in (80, 443) else f":{web}")}, run=True), bool(web))
         add("Add to monitor", self._monitor_host)
+        add("Rename / add note…", self._edit_label)
         menu.add_separator()
         add("Wake-on-LAN", self._wake, bool(dev.mac_address))
         add("Copy IP", lambda i: self._copy(i))
@@ -422,6 +435,11 @@ class IPInspectorApp(ctk.CTk):
         self._identify_chk = ctk.CTkCheckBox(self._options, text="Identify models",
                                              font=("Segoe UI", 10))
         self._identify_chk.grid(row=0, column=8, padx=(0, 12))
+        ctk.CTkLabel(self._options, text="Auto-rescan:", **opt_label).grid(
+            row=0, column=9, padx=(0, 6))
+        self._auto_menu = ctk.CTkOptionMenu(self._options, values=list(AUTO_RESCAN), width=90,
+                                            command=lambda _v: self._on_auto_change())
+        self._auto_menu.grid(row=0, column=10, padx=(0, 12))
         self._options.grid_remove()
 
         # -- results header ---------------------------------------------------- #
@@ -519,6 +537,7 @@ class IPInspectorApp(ctk.CTk):
         (self._resolve_chk.select if s.resolve_hostnames else self._resolve_chk.deselect)()
         (self._identify_chk.select if s.identify_models else self._identify_chk.deselect)()
         (self._only_open_chk.select if s.only_open else self._only_open_chk.deselect)()
+        self._auto_menu.set(next((k for k, v in AUTO_RESCAN.items() if v == s.auto_rescan), "Off"))
         self._tree.set_marks(self._favorites)
         self._tree.set_filter("", only_open=s.only_open)
         target = s.last_range or local_network_hint()
@@ -536,6 +555,7 @@ class IPInspectorApp(ctk.CTk):
         s.resolve_hostnames = bool(self._resolve_chk.get())
         s.identify_models = bool(self._identify_chk.get())
         s.only_open = bool(self._only_open_chk.get())
+        s.auto_rescan = AUTO_RESCAN.get(self._auto_menu.get(), 0)
         s.last_range = self._range_entry.get().strip()
         s.save()
 
@@ -654,6 +674,8 @@ class IPInspectorApp(ctk.CTk):
             messagebox.showerror(APP_NAME, f"Invalid port list: {exc}")
             return
         self._save_options()
+        self._cancel_auto()
+        self._auto_run = False
         self._tabview.set(TAB_SCANNER)
         self._start_scan(request, clear=True)
 
@@ -666,6 +688,7 @@ class IPInspectorApp(ctk.CTk):
         if clear:
             self._devices.clear()
             self._new_devices.clear()
+            self._gone = []
             self._tree.clear()
             self._detail.set_device(None)
         self._partial = not clear
@@ -765,11 +788,12 @@ class IPInspectorApp(ctk.CTk):
 
     def _on_device_event(self, device: Device) -> None:
         self._devices[device.ip_address] = device
+        self._tree.set_alias(device.ip_address, self._label_for(device).get("name", ""))
         self._tree.upsert_device(device)
         self._update_summary()
         current = self._detail.device
         if current is not None and current.ip_address == device.ip_address:
-            self._detail.set_device(device)
+            self._detail.set_device(device, self._label_for(device))
 
     def _scan_finished(self) -> None:
         self._scanning = False
@@ -779,16 +803,29 @@ class IPInspectorApp(ctk.CTk):
         if get_profile(self._profile_menu.get()) is not CUSTOM:
             self._ports_entry.configure(state="disabled")
         elapsed = time.monotonic() - self._scan_started
-        if self._outcome == "Finished" and not self._partial:
+        complete = self._outcome == "Finished" and not self._partial
+        if complete:
             self._mark_new_devices()
+            self._track_changes()
         total = len(self._devices)
-        self._set_status(f"{self._outcome or 'Finished'}: {total} device"
-                         f"{'s' if total != 1 else ''} in {self._last_range} "
-                         f"({self._last_profile}, {elapsed:.1f} s)")
+        status = (f"{self._outcome or 'Finished'}: {total} device"
+                  f"{'s' if total != 1 else ''} in {self._last_range} "
+                  f"({self._last_profile}, {elapsed:.1f} s)")
         self._update_summary()
         self._refresh_favorites()
-        if self._outcome != "Stopped by user":
+        changes = len(self._new_devices) + len(self._gone)
+        if self._auto_run and complete and changes:
+            status = (f"Auto-rescan found changes: {len(self._new_devices)} new, "
+                      f"{len(self._gone)} gone (Ctrl+D for details) — " + status)
+            self.title(f"(!) {APP_NAME} {APP_VERSION}")
             self.bell()
+            self.after(300, self.bell)
+        elif not self._auto_run and self._outcome != "Stopped by user":
+            self.bell()
+        if complete and AUTO_RESCAN.get(self._auto_menu.get(), 0):
+            self._schedule_auto()
+            status += f" · next scan at {datetime.fromtimestamp(self._auto_due):%H:%M}"
+        self._set_status(status)
 
     def _mark_new_devices(self) -> None:
         """Flag devices never seen in an earlier scan (by MAC, else IP)."""
@@ -803,8 +840,171 @@ class IPInspectorApp(ctk.CTk):
                 if not first_scan:
                     new.add(ip)
         self._new_devices = new
-        self._tree.set_marks(self._favorites, new)
+        self._tree.set_marks(self._favorites, new, self._aliases())
         self.settings.save()
+
+    def _track_changes(self) -> None:
+        """Compare with the previous complete scan of the same range."""
+        s = self.settings
+        current = {device_key(d): {"ip": ip, "name": d.hostname or d.vendor or ""}
+                   for ip, d in self._devices.items()}
+        if s.last_scan_range == self._last_range:
+            self._gone = [dict(info, key=key) for key, info in s.last_scan.items()
+                          if key not in current]
+        else:
+            self._gone = []
+        s.last_scan, s.last_scan_range = current, self._last_range
+        s.save()
+
+    def _show_changes(self) -> None:
+        """Dialog listing what appeared and disappeared since the last scan."""
+        self.title(f"{APP_NAME} {APP_VERSION}")
+        lines = []
+        new = sorted(self._new_devices, key=ip_key)
+        lines.append(f"NEW ({len(new)}) — never seen before")
+        for ip in new:
+            dev = self._devices.get(ip)
+            name = self._label_for(dev).get("name") or (dev.hostname or dev.vendor if dev else "")
+            lines.append(f"  + {ip:<16} {dev.mac_address or '-' if dev else '-':<18} {name or ''}")
+        if not new:
+            lines.append("  (none)")
+        lines.append("")
+        lines.append(f"GONE ({len(self._gone)}) — answered the previous scan, not this one")
+        for info in sorted(self._gone, key=lambda i: ip_key(i["ip"])):
+            label = self.settings.device_labels.get(info["key"], {}).get("name") or info["name"]
+            mac = info["key"] if info["key"] != info["ip"] else "-"
+            lines.append(f"  - {info['ip']:<16} {mac:<18} {label}")
+        if not self._gone:
+            lines.append("  (none)")
+        if not self._devices:
+            lines = ["Run a complete scan first; changes are measured against the",
+                     "previous complete scan of the same range."]
+        self._text_dialog("Changes since last scan", "\n".join(lines))
+
+    def _text_dialog(self, title: str, text: str) -> None:
+        window = ctk.CTkToplevel(self)
+        window.title(title)
+        window.geometry("620x380")
+        window.transient(self)
+        box = ctk.CTkTextbox(window, font=("Consolas", 11))
+        box.pack(fill="both", expand=True, padx=10, pady=(10, 6))
+        box.insert("1.0", text)
+        box.configure(state="disabled")
+        ctk.CTkButton(window, text="Close", width=90, command=window.destroy).pack(pady=(0, 10))
+        window.after(50, window.focus_force)
+
+    # -- custom names and notes ------------------------------------------ #
+    def _label_for(self, device: Device | None) -> dict:
+        if device is None:
+            return {}
+        return self.settings.device_labels.get(device_key(device), {})
+
+    def _aliases(self) -> dict[str, str]:
+        return {ip: self._label_for(d).get("name", "") for ip, d in self._devices.items()
+                if self._label_for(d).get("name")}
+
+    def _rename_selected(self) -> None:
+        ip = self._tree.get_selected_ip()
+        if ip:
+            self._edit_label(ip)
+
+    def _edit_label(self, ip: str) -> None:
+        """Small dialog to give a device a custom name and a note."""
+        device = self._devices.get(ip)
+        if device is None:
+            return
+        current = self._label_for(device)
+        window = ctk.CTkToplevel(self)
+        window.title(f"Rename {ip}")
+        window.geometry("440x230")
+        window.resizable(False, False)
+        window.transient(self)
+        window.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(window, text=f"{ip}   {device.mac_address or ''}   "
+                                  f"{device.hostname or device.vendor or ''}",
+                     text_color=c("text_muted")).grid(row=0, column=0, columnspan=2,
+                                                      padx=14, pady=(14, 8), sticky="w")
+        ctk.CTkLabel(window, text="Name:").grid(row=1, column=0, padx=(14, 8), sticky="e")
+        name = ctk.CTkEntry(window, placeholder_text="e.g. Living room TV")
+        name.grid(row=1, column=1, padx=(0, 14), pady=4, sticky="ew")
+        name.insert(0, current.get("name", ""))
+        ctk.CTkLabel(window, text="Note:").grid(row=2, column=0, padx=(14, 8), sticky="e")
+        note = ctk.CTkEntry(window, placeholder_text="optional")
+        note.grid(row=2, column=1, padx=(0, 14), pady=4, sticky="ew")
+        note.insert(0, current.get("note", ""))
+
+        def save() -> None:
+            self.set_label(ip, name.get(), note.get())
+            window.destroy()
+
+        buttons = ctk.CTkFrame(window, fg_color="transparent")
+        buttons.grid(row=3, column=0, columnspan=2, pady=16)
+        ctk.CTkButton(buttons, text="Save", width=90, command=save).pack(side="left", padx=4)
+        ctk.CTkButton(buttons, text="Cancel", width=90, fg_color="transparent",
+                      border_width=1, text_color=c("text_primary"),
+                      command=window.destroy).pack(side="left", padx=4)
+        name.bind("<Return>", lambda _e: save())
+        note.bind("<Return>", lambda _e: save())
+        window.after(50, lambda: (window.focus_force(), name.focus_set()))
+
+    def set_label(self, ip: str, name: str, note: str = "") -> None:
+        """Store (or clear, when both are empty) a device's custom name and note."""
+        device = self._devices.get(ip)
+        if device is None:
+            return
+        key = device_key(device)
+        name, note = name.strip(), note.strip()
+        if name or note:
+            self.settings.device_labels[key] = {"name": name, "note": note}
+        else:
+            self.settings.device_labels.pop(key, None)
+        self.settings.save()
+        self._tree.set_alias(ip, name)
+        self._tree.upsert_device(device)
+        if self._detail.device is not None and self._detail.device.ip_address == ip:
+            self._detail.set_device(device, self._label_for(device))
+        self._refresh_favorites()
+
+    # -- automatic rescans ------------------------------------------------ #
+    def _on_auto_change(self) -> None:
+        minutes = AUTO_RESCAN.get(self._auto_menu.get(), 0)
+        self.settings.auto_rescan = minutes
+        self.settings.save()
+        self._cancel_auto()
+        if minutes and self._devices and not self._scanning:
+            self._schedule_auto()
+            self._set_status(f"Auto-rescan every {minutes} min · next scan at "
+                             f"{datetime.fromtimestamp(self._auto_due):%H:%M}")
+        elif not minutes:
+            self._set_status("Auto-rescan off")
+
+    def _schedule_auto(self) -> None:
+        self._cancel_auto()
+        minutes = AUTO_RESCAN.get(self._auto_menu.get(), 0)
+        if minutes:
+            self._auto_due = time.time() + minutes * 60
+            self._auto_job = self.after(minutes * 60 * 1000, self._auto_scan)
+
+    def _cancel_auto(self) -> None:
+        if self._auto_job is not None:
+            try:
+                self.after_cancel(self._auto_job)
+            except (tk.TclError, ValueError):
+                pass
+            self._auto_job = None
+
+    def _auto_scan(self) -> None:
+        self._auto_job = None
+        if self._scanning:
+            self._schedule_auto()
+            return
+        target = self._last_range or self._range_entry.get().strip()
+        try:
+            request = self._build_request(target)
+        except ValueError:
+            return
+        self._auto_run = True
+        self._start_scan(request, clear=True)
 
     def _update_summary(self) -> None:
         total = len(self._devices)
@@ -816,6 +1016,8 @@ class IPInspectorApp(ctk.CTk):
             parts.append(f"{risky} at risk")
         if self._new_devices:
             parts.append(f"{len(self._new_devices)} new")
+        if self._gone:
+            parts.append(f"{len(self._gone)} gone")
         shown = self._tree.row_count()
         if shown != total:
             parts.append(f"{shown} shown")
@@ -846,7 +1048,8 @@ class IPInspectorApp(ctk.CTk):
         return set(self.settings.favorites)
 
     def _on_device_selected(self, ip: str) -> None:
-        self._detail.set_device(self._devices.get(ip))
+        device = self._devices.get(ip)
+        self._detail.set_device(device, self._label_for(device))
 
     def _open_tool(self, name: str, values: dict, run: bool = False) -> None:
         self._tabview.set(TAB_TOOLS)
@@ -937,7 +1140,7 @@ class IPInspectorApp(ctk.CTk):
         for ip in self.settings.favorites:
             dev = self._devices.get(ip)
             if dev:
-                name = dev.hostname or dev.vendor or ""
+                name = self._label_for(dev).get("name") or dev.hostname or dev.vendor or ""
                 ports = dev.ports_compact()
                 line = f"●  {ip}   {name}   [{ports}]"
             else:
@@ -1071,20 +1274,25 @@ class IPInspectorApp(ctk.CTk):
             "• Click a device for details; arrow shows services; double-click\n"
             "  opens its web page; right-click for RDP, SSH, shares, ping,\n"
             "  traceroute, full port scan, TLS, monitor, Wake-on-LAN…\n"
-            "• NEW marks devices never seen before. ★ marks favorites.\n\n"
+            "• NEW marks devices never seen before. ★ marks favorites.\n"
+            "• F2 or right-click › Rename gives a device your own name and note.\n"
+            "• Ctrl+D lists devices that appeared or disappeared since the\n"
+            "  previous scan; Options › Auto-rescan repeats it and alerts.\n\n"
             "TOOLS: ping, traceroute, port check, DNS, WHOIS, TLS, HTTP\n"
             "headers, subnet calculator, ARP table, listening ports…\n\n"
             "MONITOR: watch hosts continuously and get alerted when they drop.\n\n"
             "SHORTCUTS\n"
             "F5 scan · Esc stop · Ctrl+R rescan device · Ctrl+F filter\n"
             "Ctrl+S export · Ctrl+P report · Ctrl+T tools · Ctrl+M monitor\n"
-            "F8 options · F9 details panel")
+            "Ctrl+D changes · F2 rename · F8 options · F9 details panel\n\n"
+            "COMMAND LINE: python -m ip_inspector 192.168.1.0/24 -p quick")
 
     # ------------------------------------------------------------------ #
     # Lifecycle
     # ------------------------------------------------------------------ #
     def destroy(self) -> None:
         self._stop_event.set()
+        self._cancel_auto()
         try:
             self._monitor.shutdown()
         except Exception:  # noqa: BLE001

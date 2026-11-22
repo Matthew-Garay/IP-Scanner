@@ -171,6 +171,69 @@ class NewDevices(WindowTestCase):
         self.assertIn("new", self.app._summary_label.cget("text"))
 
 
+class Changes(WindowTestCase):
+
+    def test_devices_missing_from_the_previous_scan_are_reported_gone(self):
+        self.app._last_range = "10.0.0.0/24"
+        self._finish(_device("10.0.0.1", mac="AA:00:00:00:00:01"),
+                     _device("10.0.0.2", mac="AA:00:00:00:00:02"))
+        self.assertEqual(self.app._gone, [])
+        self.app._devices.clear()
+        self._finish(_device("10.0.0.1", mac="AA:00:00:00:00:01"))
+        self.assertEqual([g["ip"] for g in self.app._gone], ["10.0.0.2"])
+        self.assertIn("1 gone", self.app._summary_label.cget("text"))
+
+    def test_a_different_range_is_not_compared(self):
+        self.app._last_range = "10.0.0.0/24"
+        self._finish(_device("10.0.0.1", mac="AA:00:00:00:00:01"))
+        self.app._devices.clear()
+        self.app._last_range = "10.0.1.0/24"
+        self._finish(_device("10.0.1.5", mac="AA:00:00:00:00:05"))
+        self.assertEqual(self.app._gone, [])
+
+
+class Labels(WindowTestCase):
+
+    def test_custom_name_shows_in_the_table_and_persists(self):
+        self._pump(ScannerEvent("Device", device=_device("10.0.0.3", "dlink-cam",
+                                                         mac="AA:00:00:00:00:03")))
+        self.app.set_label("10.0.0.3", "Garage camera", "check firmware")
+        self.assertEqual(self.app._tree.row_values("10.0.0.3")[0], "Garage camera")
+        saved = Settings.load().device_labels["AA:00:00:00:00:03"]
+        self.assertEqual(saved, {"name": "Garage camera", "note": "check firmware"})
+        self.app._tree.set_filter("garage")
+        self.assertEqual(self.app._tree.row_count(), 1)
+
+    def test_the_name_follows_the_mac_to_a_new_ip(self):
+        self.app.settings.device_labels["AA:00:00:00:00:04"] = {"name": "Printer", "note": ""}
+        self._pump(ScannerEvent("Device", device=_device("10.0.0.44", mac="AA:00:00:00:00:04")))
+        self.assertEqual(self.app._tree.row_values("10.0.0.44")[0], "Printer")
+
+    def test_clearing_both_fields_removes_the_label(self):
+        self._pump(ScannerEvent("Device", device=_device("10.0.0.3", "cam")))
+        self.app.set_label("10.0.0.3", "Cam")
+        self.app.set_label("10.0.0.3", "", "")
+        self.assertEqual(self.app._tree.row_values("10.0.0.3")[0], "cam")
+        self.assertEqual(Settings.load().device_labels, {})
+
+
+class AutoRescan(WindowTestCase):
+
+    def test_a_complete_scan_schedules_the_next_one(self):
+        self.app._auto_menu.set("15 min")
+        self._finish(_device("10.0.0.1"))
+        self.assertIsNotNone(self.app._auto_job)
+        self.assertIn("next scan at", self.app._status_label.cget("text"))
+
+    def test_off_cancels_the_pending_scan(self):
+        self.app._auto_menu.set("15 min")
+        self._finish(_device("10.0.0.1"))
+        self.app._auto_menu.set("Off")
+        self.app._on_auto_change()
+        self.assertIsNone(self.app._auto_job)
+        self.assertEqual(Settings.load().auto_rescan, 0)
+
+
 class Options(WindowTestCase):
 
     def test_custom_profile_builds_a_request_with_typed_ports(self):

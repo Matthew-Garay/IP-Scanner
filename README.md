@@ -14,7 +14,9 @@ The program follows a layered architecture where each layer only imports from th
 - **Scan profiles:** Quick, Standard (top ~100 ports), Full (1-1024), IoT / Cameras, Ping sweep only, and Custom port lists such as `22,80,443,8000-8100`.
 - **Scan options:** network adapter selector, timeout, thread count, hostname resolution and model identification toggles.
 - **Results:** sortable, filterable table with expandable services per device, a details panel, risk score and security findings.
-- **Change detection:** devices never seen before are flagged **NEW**; favorites (★) are remembered between sessions.
+- **Change detection:** devices never seen before are flagged **NEW**, devices that stopped answering are listed as **gone** (Ctrl+D), and an optional **auto-rescan** (every 5-60 min) alerts you when something changes.
+- **Your own names:** give any device a custom name and a note (F2); they follow its MAC address even when its IP changes. Favorites (★) are remembered between sessions.
+- **Command line:** scan without the window and export to CSV/JSON, e.g. for scheduled tasks (see below).
 - **Device actions (right-click):** open in browser, Remote Desktop, SSH, browse shared folders, rescan, full 1-65535 port scan, ping, traceroute, TLS certificate, HTTP security headers, Wake-on-LAN, copy IP/MAC, add to monitor.
 - **Tools tab:** Ping, Traceroute, Port check, Wake-on-LAN, DNS lookup, Reverse DNS, DNS summary, Mail security (SPF/DMARC/MX), Zone transfer, WHOIS, TLS certificate, HTTP headers, Subnet calculator, Subnet split, IP-in-network, Network adapters, ARP table, Listening ports and Local exposure.
 - **Monitor tab:** continuous reachability checks with latency, uptime, loss statistics, an event log and an alert sound when a host goes down.
@@ -61,6 +63,19 @@ This project needs no .env file or environment variables.
 python -m ip_inspector.main
 ```
 
+### Command-line mode
+
+```powershell
+python -m ip_inspector 192.168.1.0/24 -p quick          # scan and print a table
+python -m ip_inspector 10.0.0.1-50 --ports 22,80,443,8000-8100
+python -m ip_inspector -o results.csv -o results.json   # local network, save both
+python -m ip_inspector 192.168.1.0/24 --fail-on-risk 40 # exit code 3 if a host is risky
+python -m ip_inspector --list-profiles
+python -m ip_inspector --help
+```
+
+Without arguments, `python -m ip_inspector` opens the window.
+
 ### Keyboard shortcuts
 
 | Key | Action |
@@ -70,6 +85,7 @@ python -m ip_inspector.main
 | Ctrl+F | Filter the results |
 | Ctrl+S / Ctrl+P | Export results / security report |
 | Ctrl+T / Ctrl+M | Tools tab / Monitor tab |
+| Ctrl+D / F2 | Changes since last scan / rename the selected device |
 | F8 / F9 | Scan options / details panel |
 
 ### Tests
