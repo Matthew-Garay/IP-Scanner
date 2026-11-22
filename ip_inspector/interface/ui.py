@@ -1,22 +1,24 @@
 ﻿"""
-Main window of IP Inspector.
+Main window of IP Inspector, built on native Windows controls (ttk).
 
-Tabs
-----
-* **Scanner**   - range, adapter and profile pickers, scan options, the
-                  results table and the device detail panel.
-* **Favorites** - devices you pinned, remembered between sessions.
-* **Tools**     - standalone diagnostics (see :mod:`.tools_tab`).
-* **Monitor**   - continuous reachability checks (see :mod:`.monitor_tab`).
+Layout
+------
+* Menu bar:   File · Edit · View · Actions · Tools · Settings · Help
+* Toolbar:    Scan / Stop, address range (with history), adapter, profile,
+              Options, Search
+* Options:    collapsible strip (F8): ports, timeout, threads, name
+              resolution, model identification, auto-rescan, open-ports filter
+* Tabs:       Results (grid + property panel) · Favorites · Tools · Monitor
+* Status bar: message · summary · progress · privilege mode
 
 Threading model
 ---------------
 Every long operation runs on a worker thread that pushes results onto a
 ``queue.Queue``. The main thread drains it with ``after()`` — the only safe
-way to update tkinter from another thread.
-
-The scan worker always finishes by posting :data:`WORKER_DONE`, even when the
-engine raises, so the buttons can never stay stuck in the "scanning" state.
+way to update tkinter from another thread. The scan worker always finishes
+by posting :data:`WORKER_DONE`, even when the engine raises, so the buttons
+can never stay stuck in the "scanning" state. Other workers (shared-folder
+lookups) hand callables to :meth:`IPInspectorApp._call_soon`.
 
 Event contract
 --------------
@@ -27,6 +29,7 @@ The phase names below are the ones :class:`NetworkScanner` emits;
 from __future__ import annotations
 
 import ctypes
+import ipaddress
 import logging
 import os
 import queue
@@ -37,13 +40,20 @@ import time
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
-from tkinter import filedialog, messagebox
-
-import customtkinter as ctk
+from tkinter import filedialog, messagebox, ttk
+from typing import Callable
 
 from .. import i18n
 from ..actions.exporter import export as export_devices
-from ..actions.menu import best_web_port, open_remote_desktop, open_web, wake_device
+from ..actions.exporter import load_json
+from ..actions.menu import (
+    best_web_port,
+    open_ftp,
+    open_remote_desktop,
+    open_web,
+    remote_power,
+    wake_device,
+)
 from ..analysis.exposure import exposure_findings, exposure_score
 from ..core.models import Device, ScannerEvent
 from ..core.network import NetworkScanner
@@ -54,6 +64,7 @@ from ..core.utils import (
     local_network_hint,
     plan_targets,
 )
+from ..nettools import tools as nettools
 from ..nettools.profiles import CUSTOM, PROFILES, get_profile, parse_ports
 from . import theme
 from .monitor_tab import MonitorTab
@@ -61,9 +72,10 @@ from .settings import Settings
 from .tools_tab import ToolsTab
 from .widgets import (
     TREE_COLUMNS,
-    DetailPanel,
+    CheckBox,
     DeviceTree,
-    c,
+    Notebook,
+    PropertyPanel,
     device_key,
     device_row,
     ip_key,
@@ -80,10 +92,10 @@ __all__ = [
 
 APP_NAME = "IP Inspector"
 APP_AUTHOR = "Matthew Garay"
-APP_VERSION = "2.0"
+APP_VERSION = "2.1"
 
-WINDOW_SIZE = (1440, 880)
-WINDOW_MINIMUM = (1100, 660)
+WINDOW_SIZE = (1280, 760)
+WINDOW_MINIMUM = (900, 520)
 POLL_INTERVAL_MS = 100
 
 #: Events processed per poll, so a burst never freezes the window.
@@ -108,33 +120,37 @@ PHASE_TEXT = {
 
 TIMEOUTS = ("0.2", "0.3", "0.5", "1.0", "2.0")
 THREADS = ("100", "250", "500", "1000", "1500", "2000")
-AUTO_ADAPTER = "Auto (default route)"
-#: Auto-rescan choices shown in the options row -> minutes (0 = off).
+AUTO_ADAPTER = "Automatic"
+#: Auto-rescan choices shown in the options strip -> minutes (0 = off).
 AUTO_RESCAN = {"Off": 0, "5 min": 5, "15 min": 15, "30 min": 30, "60 min": 60}
 
-TAB_SCANNER = "Scanner"
+TAB_SCANNER = "Results"
 TAB_FAVORITES = "Favorites"
 TAB_TOOLS = "Tools"
 TAB_MONITOR = "Monitor"
 
+SMB_PORTS = {139, 445}
+WINDOWS_PORTS = {135, 139, 445, 3389}
 
-class IPInspectorApp(ctk.CTk):
+
+class IPInspectorApp(tk.Tk):
     """Main window."""
 
     def __init__(self, settings: Settings | None = None) -> None:
         super().__init__()
-        self.title(f"{APP_NAME} {APP_VERSION}")
-        self._centre_on_screen(WINDOW_SIZE, WINDOW_MINIMUM)
-        self.minsize(*WINDOW_MINIMUM)
-
+        self.withdraw()
+        self.title(APP_NAME)
         self.settings = settings if settings is not None else Settings.load()
         i18n.initialize()
         i18n.set_language("en")
-        if self.settings.appearance in ("light", "dark"):
-            ctk.set_appearance_mode(self.settings.appearance)
-        theme.set_mode(ctk.get_appearance_mode())
+        theme.setup_style(self)
+        self.icons = theme.Icons()
+        self._set_window_icon()
+        self._restore_geometry()
+        self.minsize(*WINDOW_MINIMUM)
 
         self._events: queue.Queue[ScannerEvent] = queue.Queue()
+        self._calls: queue.Queue[Callable[[], None]] = queue.Queue()
         self._scanner = NetworkScanner(event_queue=self._events)
         self._devices: dict[str, Device] = {}
         self._new_devices: set[str] = set()
@@ -156,28 +172,64 @@ class IPInspectorApp(ctk.CTk):
         self._auto_job: str | None = None
         self._auto_due = 0.0
         self._auto_run = False
+        #: Shared-folder lookups already done (or running) per IP.
+        self._shares_requested: set[str] = set()
 
         self._build_menu_bar()
         self._build_layout()
         self._load_options()
         self._refresh_favorites()
-        self._set_status("Ready. Press Scan (F5) to explore the network.")
+        self._set_status("Ready")
         self._schedule(POLL_INTERVAL_MS, self._poll_queue)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.deiconify()
+        if self.settings.window_zoomed:
+            try:
+                self.state("zoomed")
+            except tk.TclError:
+                pass
 
     # ------------------------------------------------------------------ #
     # Window helpers
     # ------------------------------------------------------------------ #
-    def _centre_on_screen(self, size, minimum):
+    def _restore_geometry(self) -> None:
+        geometry = self.settings.window_geometry
+        if geometry:
+            try:
+                size, _, position = geometry.partition("+")
+                width, height = (int(v) for v in size.split("x"))
+                x, y = (int(v) for v in position.split("+"))
+                sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+                if 0 <= x < sw - 100 and 0 <= y < sh - 100 and width >= WINDOW_MINIMUM[0]:
+                    self.geometry(geometry)
+                    return
+            except ValueError:
+                pass
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        w = max(min(size[0], sw - 40), minimum[0])
-        h = max(min(size[1], sh - 80), minimum[1])
+        w = max(min(theme.px(WINDOW_SIZE[0]), sw - 40), WINDOW_MINIMUM[0])
+        h = max(min(theme.px(WINDOW_SIZE[1]), sh - 80), WINDOW_MINIMUM[1])
         self.geometry(f"{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 3)}")
+
+    def _set_window_icon(self) -> None:
+        here = Path(__file__).resolve().parents[1]
+        for folder in (here / "assets", Path(getattr(sys, "_MEIPASS", here)) / "assets"):
+            icon = folder / "icon.png"
+            if icon.is_file():
+                try:
+                    self._icon_image = tk.PhotoImage(file=str(icon))
+                    self.iconphoto(True, self._icon_image)
+                except tk.TclError:
+                    pass
+                return
 
     def _schedule(self, ms: int, callback) -> None:
         self._after_jobs.append(self.after(ms, callback))
         if len(self._after_jobs) > 32:
             self._after_jobs = self._after_jobs[-8:]
+
+    def _call_soon(self, callback: Callable[[], None]) -> None:
+        """Run ``callback`` on the UI thread (safe to call from any thread)."""
+        self._calls.put(callback)
 
     @staticmethod
     def _safe_adapters():
@@ -191,7 +243,7 @@ class IPInspectorApp(ctk.CTk):
         self._status_label.configure(text=text)
 
     # ------------------------------------------------------------------ #
-    # Menu bar and context menu
+    # Menu bar
     # ------------------------------------------------------------------ #
     def _build_menu_bar(self) -> None:
         bar = tk.Menu(self)
@@ -200,51 +252,66 @@ class IPInspectorApp(ctk.CTk):
         m_file = tk.Menu(bar, tearoff=0)
         m_file.add_command(label="Scan", accelerator="F5", command=self._on_scan_click)
         m_file.add_command(label="Stop", accelerator="Esc", command=self._on_stop_click)
-        m_file.add_command(label="Rescan selected device", accelerator="Ctrl+R",
-                           command=self._rescan_selected)
         m_file.add_separator()
-        m_file.add_command(label="Export results (CSV / JSON)…", accelerator="Ctrl+S",
+        m_file.add_command(label="Open results…", accelerator="Ctrl+O",
+                           command=self._open_results)
+        m_file.add_command(label="Save results as…", accelerator="Ctrl+S",
                            command=self._export)
-        m_file.add_command(label="Security report (HTML / PDF)…", accelerator="Ctrl+P",
+        m_file.add_command(label="Security report…", accelerator="Ctrl+P",
                            command=self._report)
         m_file.add_separator()
         m_file.add_command(label="Exit", command=self.destroy)
         bar.add_cascade(label="File", menu=m_file)
 
+        m_edit = tk.Menu(bar, tearoff=0)
+        m_edit.add_command(label="Copy", accelerator="Ctrl+C", command=self._copy_selected)
+        m_edit.add_command(label="Select all", accelerator="Ctrl+A", command=self._select_all)
+        m_edit.add_separator()
+        m_edit.add_command(label="Find…", accelerator="Ctrl+F", command=self._focus_filter)
+        m_edit.add_command(label="Rename…", accelerator="F2", command=self._rename_selected)
+        bar.add_cascade(label="Edit", menu=m_edit)
+
         m_view = tk.Menu(bar, tearoff=0)
-        m_view.add_command(label="Details panel", accelerator="F9", command=self._toggle_detail)
-        m_view.add_command(label="Scan options", accelerator="F8", command=self._toggle_options)
-        m_view.add_command(label="Expand all services", command=lambda: self._tree.expand_all(True))
+        self._props_var = tk.BooleanVar(self, value=self.settings.show_properties)
+        m_view.add_checkbutton(label="Properties panel", accelerator="F9",
+                               variable=self._props_var, command=self._apply_props_visibility)
+        self._options_var = tk.BooleanVar(self, value=False)
+        m_view.add_checkbutton(label="Scan options", accelerator="F8",
+                               variable=self._options_var,
+                               command=lambda: self._toggle_options(self._options_var.get()))
+        self._view_menu = m_view
+        m_view.add_separator()
+        m_view.add_command(label="Expand all", command=lambda: self._tree.expand_all(True))
         m_view.add_command(label="Collapse all", command=lambda: self._tree.expand_all(False))
+        m_view.add_separator()
         m_view.add_command(label="Changes since last scan…", accelerator="Ctrl+D",
                            command=self._show_changes)
-        m_view.add_separator()
-        m_view.add_command(label="Light theme", command=lambda: self._set_appearance("light"))
-        m_view.add_command(label="Dark theme", command=lambda: self._set_appearance("dark"))
-        m_view.add_command(label="System theme", command=lambda: self._set_appearance("system"))
         bar.add_cascade(label="View", menu=m_view)
+
+        self._actions_menu = tk.Menu(bar, tearoff=0, postcommand=self._fill_actions_menu)
+        bar.add_cascade(label="Actions", menu=self._actions_menu)
 
         m_tools = tk.Menu(bar, tearoff=0)
         for label, tool, values in (
             ("Ping default gateway", "Ping", lambda: {"host": default_gateway()}),
             ("Traceroute to the Internet", "Traceroute", lambda: {"host": "8.8.8.8"}),
-            ("Show ARP table", "ARP table", dict),
-            ("Show network adapters", "Network adapters", dict),
+            ("ARP table", "ARP table", dict),
+            ("Network adapters", "Network adapters", dict),
             ("Listening ports on this PC", "Listening ports", dict),
         ):
             m_tools.add_command(label=label,
                                 command=lambda t=tool, v=values: self._open_tool(t, v(), run=True))
         m_tools.add_separator()
-        m_tools.add_command(label="All tools…", accelerator="Ctrl+T",
+        m_tools.add_command(label="All tools", accelerator="Ctrl+T",
                             command=lambda: self._tabview.set(TAB_TOOLS))
-        m_tools.add_command(label="Monitor…", accelerator="Ctrl+M",
+        m_tools.add_command(label="Monitor", accelerator="Ctrl+M",
                             command=lambda: self._tabview.set(TAB_MONITOR))
         bar.add_cascade(label="Tools", menu=m_tools)
 
         m_cfg = tk.Menu(bar, tearoff=0)
         m_cfg.add_command(label="Use my local network", command=self._use_local_network)
-        m_cfg.add_command(label="Forget known devices (reset NEW flags)",
-                          command=self._forget_known)
+        m_cfg.add_command(label="Clear address history", command=self._clear_history)
+        m_cfg.add_command(label="Forget known devices", command=self._forget_known)
         if sys.platform == "win32" and not self._elevated:
             m_cfg.add_separator()
             m_cfg.add_command(label="Restart as administrator", command=self._restart_elevated)
@@ -252,14 +319,16 @@ class IPInspectorApp(ctk.CTk):
 
         m_help = tk.Menu(bar, tearoff=0)
         m_help.add_command(label="Quick guide", accelerator="F1", command=self._show_help)
-        m_help.add_command(label="About IP Inspector", command=self._show_about)
+        m_help.add_command(label=f"About {APP_NAME}", command=self._show_about)
         bar.add_cascade(label="Help", menu=m_help)
 
         for key, action in (
             ("<F5>", self._on_scan_click), ("<Escape>", self._on_stop_click),
             ("<Control-s>", self._export), ("<Control-p>", self._report),
+            ("<Control-o>", self._open_results),
             ("<Control-r>", self._rescan_selected), ("<F1>", self._show_help),
-            ("<F8>", self._toggle_options), ("<F9>", self._toggle_detail),
+            ("<F8>", lambda: self._toggle_options(not self._options_visible)),
+            ("<F9>", self._toggle_detail),
             ("<Control-f>", self._focus_filter),
             ("<Control-d>", self._show_changes),
             ("<F2>", self._rename_selected),
@@ -268,263 +337,304 @@ class IPInspectorApp(ctk.CTk):
         ):
             self.bind(key, lambda _e, a=action: a())
 
-        self._context_ip: str | None = None
         self._context = tk.Menu(self, tearoff=0)
 
-    def _show_context(self, ip: str, x: int, y: int) -> None:
-        """Right-click menu, rebuilt per device so it only offers what applies."""
-        dev = self._devices.get(ip)
-        if dev is None:
-            return
-        self._context_ip = ip
-        menu = self._context
+    # ------------------------------------------------------------------ #
+    # Device menus (context menu and the Actions menu share one builder)
+    # ------------------------------------------------------------------ #
+    def _fill_actions_menu(self) -> None:
+        menu = self._actions_menu
         menu.delete(0, tk.END)
+        ips = self._tree.get_selected_ips()
+        if not ips:
+            menu.add_command(label="Select a device first", state="disabled")
+            return
+        self._fill_device_menu(menu, ips)
+
+    def _show_context(self, ip: str, x: int, y: int) -> None:
+        ips = self._tree.get_selected_ips() or [ip]
+        if ip not in ips:
+            ips = [ip]
+        self._context.delete(0, tk.END)
+        self._fill_device_menu(self._context, ips)
+        try:
+            self._context.tk_popup(x, y)
+        finally:
+            self._context.grab_release()
+
+    def _fill_device_menu(self, menu: tk.Menu, ips: list[str]) -> None:
+        """Commands for one device, or bulk commands for several."""
+        devices = [self._devices[ip] for ip in ips if ip in self._devices]
+        if not devices:
+            return
+        if len(devices) > 1:
+            count = len(devices)
+            menu.add_command(label=f"Rescan {count} devices",
+                             command=lambda: self._rescan_hosts([d.ip_address for d in devices]))
+            menu.add_command(label=f"Wake-on-LAN ({count})",
+                             command=lambda: [self._wake(d.ip_address) for d in devices])
+            menu.add_command(label=f"Add {count} to monitor",
+                             command=lambda: [self._monitor_host(d.ip_address) for d in devices])
+            menu.add_command(label=f"Add {count} to favorites",
+                             command=lambda: self._add_favorites([d.ip_address for d in devices]))
+            menu.add_separator()
+            menu.add_command(label=f"Copy {count} rows", accelerator="Ctrl+C",
+                             command=self._copy_selected)
+            menu.add_command(label="Copy IP addresses",
+                             command=lambda: self._copy("\n".join(d.ip_address for d in devices)))
+            return
+
+        dev = devices[0]
+        ip = dev.ip_address
         ports = {p.number for p in open_ports(dev)}
         web = best_web_port(dev)
 
-        def add(label, action, enabled=True):
-            menu.add_command(label=label, command=lambda: action(ip),
-                             state="normal" if enabled else "disabled")
+        def state(enabled: bool) -> str:
+            return "normal" if enabled else "disabled"
 
-        add("Open in browser" + (f" (:{web})" if web else ""), self._open_device_web, bool(web))
-        add("Remote Desktop (RDP)", self._open_rdp, 3389 in ports)
-        add("SSH in a terminal", self._open_ssh, 22 in ports)
-        add("Browse shared folders", self._open_shares, 445 in ports or 139 in ports)
+        m_open = tk.Menu(menu, tearoff=0)
+        m_open.add_command(label="HTTP", state=state(bool(ports & {80, 8000, 8080, 5000})),
+                           command=lambda: open_web(ip, next(p for p in (80, 8080, 8000, 5000)
+                                                            if p in ports)))
+        m_open.add_command(label="HTTPS", state=state(bool(ports & {443, 8443})),
+                           command=lambda: open_web(ip, 443 if 443 in ports else 8443))
+        m_open.add_command(label="FTP", state=state(21 in ports), command=lambda: open_ftp(ip))
+        m_open.add_separator()
+        m_open.add_command(label="Remote Desktop (RDP)", state=state(3389 in ports),
+                           command=lambda: self._open_rdp(ip))
+        m_open.add_command(label="SSH", state=state(22 in ports),
+                           command=lambda: self._open_ssh(ip))
+        m_open.add_command(label="Shared folders", state=state(bool(ports & SMB_PORTS)),
+                           command=lambda: self._open_shares(ip))
+        menu.add_command(label="Open", accelerator="Enter", state=state(bool(web)),
+                         command=lambda: self._open_device_web(ip))
+        menu.add_cascade(label="Open with", menu=m_open)
         menu.add_separator()
-        add("Rescan this device", self._rescan_host)
-        add("Scan all ports (1-65535)",
-            lambda i: self._open_tool("Port check", {"host": i, "ports": "1-65535",
-                                                      "timeout": "0.3"}, run=True))
-        add("Ping", lambda i: self._open_tool("Ping", {"host": i}, run=True))
-        add("Traceroute", lambda i: self._open_tool("Traceroute", {"host": i}, run=True))
-        add("TLS certificate", lambda i: self._open_tool(
-            "TLS certificate", {"host": i, "port": "8443" if 8443 in ports and 443 not in ports
-                                else "443"}, run=True), bool(ports & {443, 8443}))
-        add("HTTP security headers", lambda i: self._open_tool(
-            "HTTP headers", {"url": f"{'https' if web in (443, 8443) else 'http'}://{i}"
-                             + ("" if web in (80, 443) else f":{web}")}, run=True), bool(web))
-        add("Add to monitor", self._monitor_host)
-        add("Rename / add note…", self._edit_label)
+
+        menu.add_command(label="Rescan", accelerator="Ctrl+R",
+                         command=lambda: self._rescan_host(ip))
+        menu.add_command(label="Scan its subnet (/24)", command=lambda: self._scan_subnet(ip))
+        m_tools = tk.Menu(menu, tearoff=0)
+        m_tools.add_command(label="Ping", command=lambda: self._open_tool(
+            "Ping", {"host": ip}, run=True))
+        m_tools.add_command(label="Traceroute", command=lambda: self._open_tool(
+            "Traceroute", {"host": ip}, run=True))
+        m_tools.add_command(label="All ports (1-65535)", command=lambda: self._open_tool(
+            "Port check", {"host": ip, "ports": "1-65535", "timeout": "0.3"}, run=True))
+        m_tools.add_command(label="Shared folders", state=state(bool(ports & SMB_PORTS)),
+                            command=lambda: self._open_tool(
+                                "Shared folders", {"host": ip}, run=True))
+        m_tools.add_command(label="TLS certificate", state=state(bool(ports & {443, 8443})),
+                            command=lambda: self._open_tool(
+                                "TLS certificate",
+                                {"host": ip, "port": "443" if 443 in ports else "8443"},
+                                run=True))
+        m_tools.add_command(label="HTTP security headers", state=state(bool(web)),
+                            command=lambda: self._open_tool(
+                                "HTTP headers",
+                                {"url": f"{'https' if web in (443, 8443) else 'http'}://{ip}"
+                                        + ("" if web in (80, 443) else f":{web}")},
+                                run=True))
+        menu.add_cascade(label="Tools", menu=m_tools)
+        menu.add_command(label="Add to monitor", command=lambda: self._monitor_host(ip))
+
+        m_power = tk.Menu(menu, tearoff=0)
+        windows = sys.platform == "win32" and bool(ports & WINDOWS_PORTS)
+        m_power.add_command(label="Wake-on-LAN", state=state(bool(dev.mac_address)),
+                            command=lambda: self._wake(ip))
+        m_power.add_separator()
+        m_power.add_command(label="Shut down…", state=state(windows),
+                            command=lambda: self._power(ip, "shutdown"))
+        m_power.add_command(label="Restart…", state=state(windows),
+                            command=lambda: self._power(ip, "restart"))
+        m_power.add_command(label="Cancel shutdown", state=state(windows),
+                            command=lambda: self._power(ip, "abort"))
+        menu.add_cascade(label="Power", menu=m_power)
         menu.add_separator()
-        add("Wake-on-LAN", self._wake, bool(dev.mac_address))
-        add("Copy IP", lambda i: self._copy(i))
-        add("Copy MAC", lambda i: self._copy(dev.mac_address or ""), bool(dev.mac_address))
-        add("Copy row", lambda i: self._copy("\t".join(device_row(dev))))
-        menu.add_separator()
-        add("Remove from favorites" if ip in self._favorites else "Add to favorites",
-            self._toggle_favorite)
-        try:
-            menu.tk_popup(x, y)
-        finally:
-            menu.grab_release()
+
+        menu.add_command(label="Rename…", accelerator="F2", command=lambda: self._edit_label(ip))
+        menu.add_command(label="Remove from favorites" if ip in self._favorites
+                         else "Add to favorites", command=lambda: self._toggle_favorite(ip))
+        m_copy = tk.Menu(menu, tearoff=0)
+        m_copy.add_command(label="Row", accelerator="Ctrl+C", command=self._copy_selected)
+        m_copy.add_command(label="IP address", command=lambda: self._copy(ip))
+        m_copy.add_command(label="MAC address", state=state(bool(dev.mac_address)),
+                           command=lambda: self._copy(dev.mac_address or ""))
+        m_copy.add_command(label="Name", command=lambda: self._copy(
+            device_row(dev, self._label_for(dev).get("name", ""))[0]))
+        menu.add_cascade(label="Copy", menu=m_copy)
 
     # ------------------------------------------------------------------ #
     # Layout
     # ------------------------------------------------------------------ #
     def _build_layout(self) -> None:
-        self.configure(fg_color=c("background"))
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(2, weight=1)
+        self._build_toolbar()
+        self._build_options()
 
-        self._tabview = ctk.CTkTabview(self, fg_color=c("surface"), anchor="nw")
-        self._tabview.grid(row=0, column=0, sticky="nsew", padx=10, pady=(4, 4))
-        scanner_tab = self._tabview.add(TAB_SCANNER)
-        favs_tab = self._tabview.add(TAB_FAVORITES)
-        tools_tab = self._tabview.add(TAB_TOOLS)
-        monitor_tab = self._tabview.add(TAB_MONITOR)
+        self._tabview = Notebook(self)
+        self._tabview.grid(row=2, column=0, sticky="nsew", padx=6, pady=(2, 0))
+        results_tab = self._tabview.add_tab(TAB_SCANNER)
+        favs_tab = self._tabview.add_tab(TAB_FAVORITES)
+        tools_tab = self._tabview.add_tab(TAB_TOOLS)
+        monitor_tab = self._tabview.add_tab(TAB_MONITOR)
 
-        self._build_scanner_tab(scanner_tab)
+        self._paned = ttk.Panedwindow(results_tab, orient="horizontal")
+        self._paned.pack(fill="both", expand=True)
+        self._tree = DeviceTree(self._paned, self.icons,
+                                on_select=self._on_device_selected,
+                                on_open_device=self._open_device_web,
+                                on_context=self._show_context,
+                                on_expand=self._on_device_expand,
+                                on_open_share=self._open_share)
+        self._paned.add(self._tree, weight=3)
+        self._detail = PropertyPanel(self._paned)
+        if self.settings.show_properties:
+            self._paned.add(self._detail, weight=1)
+            self.after(250, self._place_sash)
+        self._tree.bind_all("<Control-c>", self._on_ctrl_c, add="+")
+
         self._build_favorites_tab(favs_tab)
 
-        tools_tab.grid_columnconfigure(0, weight=1)
-        tools_tab.grid_rowconfigure(0, weight=1)
         self._tools = ToolsTab(tools_tab, on_status=self._set_status)
-        self._tools.grid(row=0, column=0, sticky="nsew")
-
-        monitor_tab.grid_columnconfigure(0, weight=1)
-        monitor_tab.grid_rowconfigure(0, weight=1)
-        self._monitor = MonitorTab(monitor_tab, on_status=self._set_status)
-        self._monitor.grid(row=0, column=0, sticky="nsew")
+        self._tools.pack(fill="both", expand=True)
+        self._monitor = MonitorTab(monitor_tab, self.icons, on_status=self._set_status)
+        self._monitor.pack(fill="both", expand=True)
 
         self._build_status_bar()
 
-    def _build_scanner_tab(self, tab) -> None:
-        tab.grid_columnconfigure(0, weight=1)
-        tab.grid_rowconfigure(3, weight=1)
+    def _build_toolbar(self) -> None:
+        bar = ttk.Frame(self, padding=(6, 5, 6, 3))
+        bar.grid(row=0, column=0, sticky="ew")
 
-        # -- toolbar --------------------------------------------------------- #
-        toolbar = ctk.CTkFrame(tab, fg_color=c("surface_alt"), corner_radius=8)
-        toolbar.grid(row=0, column=0, sticky="ew", padx=4, pady=(4, 4))
+        # Packed first so the right-hand side keeps its room when the window
+        # is narrow; the left-hand combo boxes shrink instead.
+        self._filter_entry = ttk.Entry(bar, width=16)
+        self._filter_entry.pack(side="right")
+        self._filter_entry.bind("<KeyRelease>", lambda _e: self._apply_filter())
+        self._filter_entry.bind("<Escape>", lambda _e: self._clear_filter())
+        ttk.Label(bar, text="Search:").pack(side="right", padx=(10, 4))
 
-        self._scan_btn = ctk.CTkButton(
-            toolbar, text="▶  Scan", width=110, height=32,
-            fg_color=c("accent"), hover_color=c("accent_hover"),
-            text_color=c("accent_text"), font=("Segoe UI", 11, "bold"),
-            command=self._on_scan_click,
-        )
-        self._scan_btn.grid(row=0, column=0, padx=(10, 6), pady=8)
-        flat = dict(height=32, fg_color="transparent", hover_color=c("hover"),
-                    text_color=c("text_primary"), font=("Segoe UI", 10),
-                    border_width=1, border_color=c("border"))
-        self._stop_btn = ctk.CTkButton(toolbar, text="■  Stop", width=80,
-                                       command=self._on_stop_click, state="disabled", **flat)
-        self._stop_btn.grid(row=0, column=1, padx=(0, 14), pady=8)
+        self._scan_btn = ttk.Button(bar, text="Scan", image=self.icons.scan, compound="left",
+                                    width=8, command=self._on_scan_click)
+        self._scan_btn.pack(side="left")
+        self._stop_btn = ttk.Button(bar, text="Stop", image=self.icons.stop, compound="left",
+                                    width=8, command=self._on_stop_click, state="disabled")
+        self._stop_btn.pack(side="left", padx=(4, 0))
+        ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=10)
 
-        def caption(text, column):
-            ctk.CTkLabel(toolbar, text=text, font=("Segoe UI", 10, "bold"),
-                         text_color=c("text_secondary")).grid(row=0, column=column,
-                                                              padx=(0, 6))
-
-        caption("Range:", 2)
-        self._range_entry = ctk.CTkEntry(
-            toolbar, placeholder_text="192.168.1.0/24, 10.0.0.1-50", width=210, height=30)
-        self._range_entry.grid(row=0, column=3)
+        ttk.Label(bar, text="Range:").pack(side="left")
+        self._range_entry = ttk.Combobox(bar, width=24, values=self.settings.range_history)
+        self._range_entry.pack(side="left", padx=(4, 4))
         self._range_entry.bind("<Return>", lambda _e: self._on_scan_click())
         self._range_entry.bind("<KeyRelease>", lambda _e: self._preview_range())
-        self._range_info = ctk.CTkLabel(toolbar, text="", width=78, anchor="w",
-                                        font=("Segoe UI", 9), text_color=c("text_muted"))
-        self._range_info.grid(row=0, column=4, padx=(4, 10))
+        self._range_entry.bind("<<ComboboxSelected>>", lambda _e: self._preview_range())
+        self._range_info = ttk.Label(bar, text="", width=13, style="Muted.TLabel")
+        self._range_info.pack(side="left")
 
-        caption("Adapter:", 5)
-        adapter_names = [AUTO_ADAPTER] + [f"{a.name} · {a.sweep_range}" for a in self._adapters]
-        self._adapter_menu = ctk.CTkOptionMenu(toolbar, values=adapter_names, width=200,
-                                               command=self._on_adapter_change)
-        self._adapter_menu.grid(row=0, column=6, padx=(0, 12))
+        ttk.Label(bar, text="Adapter:").pack(side="left", padx=(6, 0))
+        adapter_names = [AUTO_ADAPTER] + [f"{a.name} ({a.sweep_range})" for a in self._adapters]
+        self._adapter_menu = ttk.Combobox(bar, values=adapter_names, width=20, state="readonly")
+        self._adapter_menu.set(AUTO_ADAPTER)
+        self._adapter_menu.pack(side="left", padx=(4, 10))
+        self._adapter_menu.bind("<<ComboboxSelected>>",
+                                lambda _e: self._on_adapter_change(self._adapter_menu.get()))
 
-        caption("Profile:", 7)
-        self._profile_menu = ctk.CTkOptionMenu(
-            toolbar, values=[p.name for p in PROFILES], width=140,
-            command=lambda _v: self._on_profile_change())
-        self._profile_menu.grid(row=0, column=8, padx=(0, 6))
-        self._options_btn = ctk.CTkButton(toolbar, text="Options ▾", width=86,
-                                          command=self._toggle_options, **flat)
-        self._options_btn.grid(row=0, column=9, padx=(0, 12))
+        ttk.Label(bar, text="Profile:").pack(side="left")
+        self._profile_menu = ttk.Combobox(bar, values=[p.name for p in PROFILES], width=14,
+                                          state="readonly")
+        self._profile_menu.pack(side="left", padx=(4, 4))
+        self._profile_menu.bind("<<ComboboxSelected>>", lambda _e: self._on_profile_change())
+        self._options_btn = ttk.Button(bar, text="Options…", width=9,
+                                       command=lambda: self._toggle_options(
+                                           not self._options_visible))
+        self._options_btn.pack(side="left")
 
-        toolbar.grid_columnconfigure(10, weight=1)
-        self._export_btn = ctk.CTkButton(toolbar, text="Export", width=74,
-                                         command=self._export, **flat)
-        self._export_btn.grid(row=0, column=11, padx=(0, 6))
-        self._report_btn = ctk.CTkButton(toolbar, text="Report", width=74,
-                                         command=self._report, **flat)
-        self._report_btn.grid(row=0, column=12, padx=(0, 10))
-
-        # -- options (collapsible) ------------------------------------------- #
-        self._options = ctk.CTkFrame(tab, fg_color=c("surface_alt"), corner_radius=8)
-        self._options.grid(row=1, column=0, sticky="ew", padx=4, pady=(0, 4))
-        opt_label = dict(font=("Segoe UI", 10, "bold"), text_color=c("text_secondary"))
-        ctk.CTkLabel(self._options, text="Ports:", **opt_label).grid(
-            row=0, column=0, padx=(12, 6), pady=8)
-        self._ports_entry = ctk.CTkEntry(self._options, width=300, height=28,
-                                         placeholder_text="22,80,443,8000-8100")
-        self._ports_entry.grid(row=0, column=1, padx=(0, 4))
+    def _build_options(self) -> None:
+        self._options_frame = ttk.LabelFrame(self, text="Scan options", padding=(8, 4, 8, 6))
+        self._options_frame.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 4))
+        row = ttk.Frame(self._options_frame)
+        row.pack(fill="x")
+        ttk.Label(row, text="Ports:").pack(side="left")
+        self._ports_entry = ttk.Entry(row, width=34)
+        self._ports_entry.pack(side="left", padx=(4, 6))
         self._ports_entry.bind("<KeyRelease>", lambda _e: self._preview_range())
-        self._profile_info = ctk.CTkLabel(self._options, text="", font=("Segoe UI", 9),
-                                          text_color=c("text_muted"), width=150, anchor="w")
-        self._profile_info.grid(row=0, column=2, padx=(4, 12))
-        ctk.CTkLabel(self._options, text="Timeout (s):", **opt_label).grid(row=0, column=3,
-                                                                          padx=(0, 6))
-        self._timeout_menu = ctk.CTkOptionMenu(self._options, values=list(TIMEOUTS), width=70)
-        self._timeout_menu.grid(row=0, column=4, padx=(0, 12))
-        ctk.CTkLabel(self._options, text="Threads:", **opt_label).grid(row=0, column=5,
-                                                                      padx=(0, 6))
-        self._threads_menu = ctk.CTkOptionMenu(self._options, values=list(THREADS), width=80)
-        self._threads_menu.grid(row=0, column=6, padx=(0, 12))
-        self._resolve_chk = ctk.CTkCheckBox(self._options, text="Resolve names",
-                                            font=("Segoe UI", 10))
-        self._resolve_chk.grid(row=0, column=7, padx=(0, 10))
-        self._identify_chk = ctk.CTkCheckBox(self._options, text="Identify models",
-                                             font=("Segoe UI", 10))
-        self._identify_chk.grid(row=0, column=8, padx=(0, 12))
-        ctk.CTkLabel(self._options, text="Auto-rescan:", **opt_label).grid(
-            row=0, column=9, padx=(0, 6))
-        self._auto_menu = ctk.CTkOptionMenu(self._options, values=list(AUTO_RESCAN), width=90,
-                                            command=lambda _v: self._on_auto_change())
-        self._auto_menu.grid(row=0, column=10, padx=(0, 12))
-        self._options.grid_remove()
+        self._profile_info = ttk.Label(row, text="", style="Muted.TLabel", width=34)
+        self._profile_info.pack(side="left", padx=(0, 10))
+        ttk.Label(row, text="Timeout (s):").pack(side="left")
+        self._timeout_menu = ttk.Combobox(row, values=list(TIMEOUTS), width=5, state="readonly")
+        self._timeout_menu.pack(side="left", padx=(4, 10))
+        ttk.Label(row, text="Threads:").pack(side="left")
+        self._threads_menu = ttk.Combobox(row, values=list(THREADS), width=6, state="readonly")
+        self._threads_menu.pack(side="left", padx=(4, 10))
+        ttk.Label(row, text="Auto-rescan:").pack(side="left")
+        self._auto_menu = ttk.Combobox(row, values=list(AUTO_RESCAN), width=7, state="readonly")
+        self._auto_menu.pack(side="left", padx=(4, 0))
+        self._auto_menu.bind("<<ComboboxSelected>>", lambda _e: self._on_auto_change())
 
-        # -- results header ---------------------------------------------------- #
-        header = ctk.CTkFrame(tab, fg_color="transparent")
-        header.grid(row=2, column=0, sticky="ew", padx=4, pady=(2, 2))
-        header.grid_columnconfigure(3, weight=1)
-        self._filter_entry = ctk.CTkEntry(
-            header, placeholder_text="Filter: IP, name, MAC, vendor, port…  (Ctrl+F)",
-            width=320, height=28)
-        self._filter_entry.grid(row=0, column=0, padx=(2, 2))
-        self._filter_entry.bind("<KeyRelease>", lambda _e: self._apply_filter())
-        ctk.CTkButton(header, text="×", width=28, height=28, fg_color="transparent",
-                      hover_color=c("hover"), text_color=c("text_muted"),
-                      font=("Segoe UI", 14, "bold"),
-                      command=self._clear_filter).grid(row=0, column=1, padx=(0, 10))
-        self._only_open_chk = ctk.CTkCheckBox(header, text="Only hosts with open ports",
-                                              font=("Segoe UI", 10),
-                                              command=self._apply_filter)
-        self._only_open_chk.grid(row=0, column=2)
-        self._summary_label = ctk.CTkLabel(header, text="", font=("Segoe UI", 10),
-                                           text_color=c("text_secondary"))
-        self._summary_label.grid(row=0, column=4, padx=(0, 8), sticky="e")
-
-        # -- results ---------------------------------------------------------- #
-        body = ctk.CTkFrame(tab, fg_color="transparent")
-        body.grid(row=3, column=0, sticky="nsew")
-        body.grid_columnconfigure(0, weight=1)
-        body.grid_rowconfigure(0, weight=1)
-        self._tree = DeviceTree(body, on_select=self._on_device_selected,
-                                on_open_device=self._open_device_web,
-                                on_context=self._show_context)
-        self._tree.grid(row=0, column=0, sticky="nsew", padx=(4, 0), pady=4)
-        self._detail = DetailPanel(body)
-        self._detail.grid(row=0, column=1, sticky="nsew", padx=(4, 4), pady=4)
+        row2 = ttk.Frame(self._options_frame)
+        row2.pack(fill="x", pady=(4, 0))
+        self._resolve_chk = CheckBox(row2, text="Resolve host names")
+        self._resolve_chk.pack(side="left")
+        self._identify_chk = CheckBox(row2, text="Identify device models")
+        self._identify_chk.pack(side="left", padx=(14, 0))
+        self._only_open_chk = CheckBox(row2, text="Show only hosts with open ports",
+                                       command=self._apply_filter)
+        self._only_open_chk.pack(side="left", padx=(14, 0))
+        self._options_frame.grid_remove()
 
     def _build_favorites_tab(self, tab) -> None:
-        tab.grid_columnconfigure(0, weight=1)
-        tab.grid_rowconfigure(1, weight=1)
-        ctk.CTkLabel(tab, text="Right-click a device in the Scanner tab → “Add to favorites”. "
-                               "Double-click a favorite to jump to it.",
-                     text_color=c("text_muted"), font=("Segoe UI", 10)).grid(
-            row=0, column=0, sticky="w", padx=8, pady=(6, 0))
-        self._favs_list = tk.Listbox(tab, borderwidth=0, highlightthickness=0,
-                                     font=("Segoe UI", 11), activestyle="none")
-        self._favs_list.grid(row=1, column=0, sticky="nsew", padx=6, pady=6)
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(1, weight=1)
+        ttk.Label(tab, text="Right-click a device in Results and choose “Add to favorites”. "
+                            "Double-click a favorite to find it; Delete removes it.",
+                  style="Muted.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        self._favs_list = tk.Listbox(tab, relief="solid", borderwidth=1,
+                                     highlightthickness=0, activestyle="none",
+                                     selectbackground=theme.PALETTE.selection,
+                                     selectforeground=theme.PALETTE.text)
+        self._favs_list.grid(row=1, column=0, sticky="nsew")
         self._favs_list.bind("<Double-1>", self._on_fav_double_click)
         self._favs_list.bind("<Delete>", self._on_fav_delete)
-        self._style_native(theme.current())
 
     def _build_status_bar(self) -> None:
-        status = ctk.CTkFrame(self, fg_color=c("surface"), corner_radius=0, height=28)
-        status.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 8))
-        status.grid_columnconfigure(1, weight=1)
-        self._status_label = ctk.CTkLabel(status, text="", font=("Segoe UI", 9),
-                                          text_color=c("text_secondary"), anchor="w")
-        self._status_label.grid(row=0, column=0, padx=10, sticky="w")
-        self._progress = ctk.CTkProgressBar(status, height=8, width=240,
-                                            progress_color=c("primary"))
-        self._progress.set(0)
-        self._progress.grid(row=0, column=1, padx=10, sticky="w")
+        status = ttk.Frame(self, padding=(2, 2, 2, 2))
+        status.grid(row=3, column=0, sticky="ew")
+        status.columnconfigure(0, weight=1)
+        self._status_label = ttk.Label(status, text="", relief="sunken", style="Status.TLabel")
+        self._status_label.grid(row=0, column=0, sticky="ew")
+        self._summary_label = ttk.Label(status, text="", relief="sunken", width=44,
+                                        style="Status.TLabel")
+        self._summary_label.grid(row=0, column=1, sticky="ew", padx=(2, 0))
+        self._progress = ttk.Progressbar(status, length=160, mode="determinate")
+        self._progress.grid(row=0, column=2, padx=(4, 0))
         self._progress.grid_remove()
-        self._priv_label = ctk.CTkLabel(
-            status, font=("Segoe UI", 9),
-            text=("Administrator: full ARP sweep" if self._elevated
-                  else "Not elevated: limited mode (MACs from the ARP cache) — "
-                       "Settings › Restart as administrator"),
-            text_color=c("text_muted") if self._elevated else c("state_warn"),
+        self._priv_label = ttk.Label(
+            status, relief="sunken", style="Status.TLabel",
+            text="Administrator" if self._elevated else "Limited mode",
         )
-        self._priv_label.grid(row=0, column=2, padx=10, sticky="e")
+        self._priv_label.grid(row=0, column=3, sticky="ew", padx=(2, 0))
 
-    def _style_native(self, pal) -> None:
-        self._favs_list.configure(bg=pal.surface, fg=pal.text_primary,
-                                  selectbackground=pal.selection,
-                                  selectforeground=pal.selection_text)
-        if hasattr(self, "_tree"):
-            self._tree.apply_palette(pal)
-        if hasattr(self, "_monitor"):
-            self._monitor.apply_palette(pal)
+    def _place_sash(self) -> None:
+        """Start the property panel at a readable width (~380 px)."""
+        try:
+            self.update_idletasks()
+            width = self._paned.winfo_width()
+            if width > theme.px(700) and len(self._paned.panes()) > 1:
+                self._paned.sashpos(0, width - theme.px(400))
+        except tk.TclError:
+            pass
 
-    def _set_appearance(self, mode: str) -> None:
-        ctk.set_appearance_mode(mode)
-        theme.set_mode(ctk.get_appearance_mode())
-        self._style_native(theme.current())
-        self.settings.appearance = mode
-        self.settings.save()
+    def _apply_props_visibility(self) -> None:
+        show = self._props_var.get()
+        panes = self._paned.panes()
+        if show and str(self._detail) not in panes:
+            self._paned.add(self._detail, weight=1)
+            self.after_idle(self._place_sash)
+        elif not show and str(self._detail) in panes:
+            self._paned.forget(self._detail)
+        self.settings.show_properties = show
 
     # ------------------------------------------------------------------ #
     # Options
@@ -542,7 +652,7 @@ class IPInspectorApp(ctk.CTk):
         self._tree.set_filter("", only_open=s.only_open)
         target = s.last_range or local_network_hint()
         if target:
-            self._range_entry.insert(0, target)
+            self._range_entry.set(target)
         self._on_profile_change(initial=True)
 
     def _save_options(self) -> None:
@@ -557,6 +667,8 @@ class IPInspectorApp(ctk.CTk):
         s.only_open = bool(self._only_open_chk.get())
         s.auto_rescan = AUTO_RESCAN.get(self._auto_menu.get(), 0)
         s.last_range = self._range_entry.get().strip()
+        s.remember_range(s.last_range)
+        self._range_entry.configure(values=s.range_history)
         s.save()
 
     def _on_profile_change(self, initial: bool = False) -> None:
@@ -572,30 +684,28 @@ class IPInspectorApp(ctk.CTk):
                 self._timeout_menu.set(f"{profile.port_timeout:.1f}"
                                        if f"{profile.port_timeout:.1f}" in TIMEOUTS else "0.5")
         if profile is CUSTOM and not self._options_visible:
-            self._toggle_options()
+            self._toggle_options(True)
         self._preview_range()
 
-    def _toggle_options(self) -> None:
-        self._options_visible = not self._options_visible
-        if self._options_visible:
-            self._options.grid()
-            self._options_btn.configure(text="Options ▴")
+    def _toggle_options(self, show: bool) -> None:
+        self._options_visible = show
+        self._options_var.set(show)
+        if show:
+            self._options_frame.grid()
         else:
-            self._options.grid_remove()
-            self._options_btn.configure(text="Options ▾")
+            self._options_frame.grid_remove()
 
     def _on_adapter_change(self, choice: str) -> None:
         for adapter in self._adapters:
-            if choice.startswith(adapter.name + " ·"):
-                self._range_entry.delete(0, tk.END)
-                self._range_entry.insert(0, adapter.sweep_range)
+            if choice.startswith(adapter.name + " ("):
+                self._range_entry.set(adapter.sweep_range)
                 break
         self._preview_range()
 
     def _selected_interface(self) -> str:
         choice = self._adapter_menu.get()
         for adapter in self._adapters:
-            if choice.startswith(adapter.name + " ·"):
+            if choice.startswith(adapter.name + " ("):
                 return adapter.name
         return ""
 
@@ -608,33 +718,39 @@ class IPInspectorApp(ctk.CTk):
     def _preview_range(self) -> None:
         text = self._range_entry.get().strip()
         profile = get_profile(self._profile_menu.get())
-        try:
-            ports = len(self._current_ports()) if profile.scan_ports else 0
-            port_text = f"{ports} ports" if profile.scan_ports else "no port scan"
-        except ValueError:
-            ports, port_text = 0, "invalid ports"
-        self._profile_info.configure(text=f"{profile.description[:60]}" if profile is not CUSTOM
-                                     else port_text)
+        if profile is CUSTOM:
+            try:
+                info = f"{len(self._current_ports())} ports"
+            except ValueError:
+                info = "Invalid port list"
+        else:
+            info = profile.description
+        self._profile_info.configure(text=info)
         if not text:
             self._range_info.configure(text="")
             return
         plan = plan_targets(text)
         if plan.is_empty:
-            self._range_info.configure(text="invalid range", text_color=c("state_off"))
+            self._range_info.configure(text="Invalid range", style="Warn.TLabel")
         else:
             self._range_info.configure(
-                text=f"{plan.total} IPs" + (" (capped)" if plan.truncated else ""),
-                text_color=c("text_muted"))
+                text=f"{plan.total} addresses" + (" (capped)" if plan.truncated else ""),
+                style="Muted.TLabel")
 
     def _use_local_network(self) -> None:
         hint = local_network_hint()
         if not hint:
-            messagebox.showwarning(APP_NAME, "No active local network was found.")
+            messagebox.showwarning(APP_NAME, "No active local network was found.", parent=self)
             return
-        self._range_entry.delete(0, tk.END)
-        self._range_entry.insert(0, hint)
+        self._range_entry.set(hint)
         self._adapter_menu.set(AUTO_ADAPTER)
         self._preview_range()
+
+    def _clear_history(self) -> None:
+        self.settings.range_history = []
+        self.settings.save()
+        self._range_entry.configure(values=[])
+        self._set_status("Address history cleared")
 
     # ------------------------------------------------------------------ #
     # Scanning
@@ -666,12 +782,12 @@ class IPInspectorApp(ctk.CTk):
             problems = ", ".join(plan.problems) or target
             messagebox.showerror(
                 APP_NAME, f"Invalid IP range: {problems}\n\n"
-                          "Examples: 192.168.1.0/24, 192.168.1.1-100, 10.0.0.5")
+                          "Examples: 192.168.1.0/24, 192.168.1.1-100, 10.0.0.5", parent=self)
             return
         try:
             request = self._build_request(target)
         except ValueError as exc:
-            messagebox.showerror(APP_NAME, f"Invalid port list: {exc}")
+            messagebox.showerror(APP_NAME, f"Invalid port list: {exc}", parent=self)
             return
         self._save_options()
         self._cancel_auto()
@@ -689,6 +805,7 @@ class IPInspectorApp(ctk.CTk):
             self._devices.clear()
             self._new_devices.clear()
             self._gone = []
+            self._shares_requested.clear()
             self._tree.clear()
             self._detail.set_device(None)
         self._partial = not clear
@@ -699,10 +816,10 @@ class IPInspectorApp(ctk.CTk):
         self._last_profile = get_profile(request.profile).name
         self._scan_started = time.monotonic()
         self._set_buttons(scanning=True)
-        self._set_status(f"Scanning {request.target_range} ({self._last_profile})…")
+        self._set_status(f"Scanning {request.target_range}…")
         self._progress.grid()
         self._progress.configure(mode="indeterminate")
-        self._progress.start()
+        self._progress.start(12)
         self._update_summary()
         self._scan_thread = threading.Thread(
             target=self._run_scan, args=(request, self._stop_event),
@@ -730,14 +847,14 @@ class IPInspectorApp(ctk.CTk):
             return
         self._stop_event.set()
         self._stop_btn.configure(state="disabled")
-        self._set_status("Stopping… waiting for in-flight probes")
+        self._set_status("Stopping…")
 
     def _set_buttons(self, scanning: bool) -> None:
-        state = "disabled" if scanning else "normal"
-        for widget in (self._scan_btn, self._export_btn, self._report_btn,
-                       self._range_entry, self._profile_menu, self._adapter_menu,
-                       self._timeout_menu, self._threads_menu):
-            widget.configure(state=state)
+        for widget in (self._scan_btn, self._range_entry):
+            widget.configure(state="disabled" if scanning else "normal")
+        for widget in (self._profile_menu, self._adapter_menu, self._timeout_menu,
+                       self._threads_menu):
+            widget.configure(state="disabled" if scanning else "readonly")
         self._stop_btn.configure(state="normal" if scanning else "disabled")
 
     def _poll_queue(self) -> None:
@@ -748,6 +865,12 @@ class IPInspectorApp(ctk.CTk):
                 except queue.Empty:
                     break
                 self._handle_event(event)
+            while True:
+                try:
+                    callback = self._calls.get_nowait()
+                except queue.Empty:
+                    break
+                callback()
         except Exception:  # noqa: BLE001 - the poll loop must never die
             logger.exception("queue drain failed")
         self._schedule(POLL_INTERVAL_MS, self._poll_queue)
@@ -761,10 +884,10 @@ class IPInspectorApp(ctk.CTk):
         elif phase == PHASE_FINISHED:
             self._outcome = "Finished"
         elif phase == PHASE_CANCELLED:
-            self._outcome = "Stopped by user"
+            self._outcome = "Stopped"
         elif phase == PHASE_ERROR or ev.is_error:
             self._outcome = "Error"
-            messagebox.showerror("Scan error", ev.message or "Unknown error")
+            messagebox.showerror("Scan error", ev.message or "Unknown error", parent=self)
         elif phase == WORKER_DONE:
             self._scan_finished()
 
@@ -773,17 +896,15 @@ class IPInspectorApp(ctk.CTk):
             return
         text = PHASE_TEXT.get(ev.phase, ev.phase)
         if ev.phase == "Ports" and ev.total:
-            if self._progress.cget("mode") != "determinate":
+            if str(self._progress.cget("mode")) != "determinate":
                 self._progress.stop()
-                self._progress.configure(mode="determinate")
-            self._progress.set(ev.completed / ev.total)
-            text += f"  {ev.completed * 100 // ev.total}%  ({ev.completed:,}/{ev.total:,} probes)"
-        else:
-            if self._progress.cget("mode") != "indeterminate":
-                self._progress.configure(mode="indeterminate")
-                self._progress.start()
-            if ev.message:
-                text += f" — {ev.message}"
+                self._progress.configure(mode="determinate", maximum=100)
+            percent = ev.completed * 100 // ev.total
+            self._progress.configure(value=percent)
+            text += f" ({percent}%)"
+        elif str(self._progress.cget("mode")) != "indeterminate":
+            self._progress.configure(mode="indeterminate")
+            self._progress.start(12)
         self._set_status(text + "…")
 
     def _on_device_event(self, device: Device) -> None:
@@ -808,23 +929,20 @@ class IPInspectorApp(ctk.CTk):
             self._mark_new_devices()
             self._track_changes()
         total = len(self._devices)
-        status = (f"{self._outcome or 'Finished'}: {total} device"
-                  f"{'s' if total != 1 else ''} in {self._last_range} "
-                  f"({self._last_profile}, {elapsed:.1f} s)")
+        status = (f"{self._outcome or 'Finished'} — {total} device"
+                  f"{'s' if total != 1 else ''} in {elapsed:.1f} s")
         self._update_summary()
         self._refresh_favorites()
         changes = len(self._new_devices) + len(self._gone)
         if self._auto_run and complete and changes:
-            status = (f"Auto-rescan found changes: {len(self._new_devices)} new, "
-                      f"{len(self._gone)} gone (Ctrl+D for details) — " + status)
-            self.title(f"(!) {APP_NAME} {APP_VERSION}")
+            status = (f"Changes detected: {len(self._new_devices)} new, "
+                      f"{len(self._gone)} gone (Ctrl+D) — " + status)
+            self.title(f"{APP_NAME} — changes detected")
             self.bell()
             self.after(300, self.bell)
-        elif not self._auto_run and self._outcome != "Stopped by user":
-            self.bell()
         if complete and AUTO_RESCAN.get(self._auto_menu.get(), 0):
             self._schedule_auto()
-            status += f" · next scan at {datetime.fromtimestamp(self._auto_due):%H:%M}"
+            status += f"; next scan at {datetime.fromtimestamp(self._auto_due):%H:%M}"
         self._set_status(status)
 
     def _mark_new_devices(self) -> None:
@@ -856,44 +974,98 @@ class IPInspectorApp(ctk.CTk):
         s.last_scan, s.last_scan_range = current, self._last_range
         s.save()
 
+    def _update_summary(self) -> None:
+        total = len(self._devices)
+        if not total:
+            self._summary_label.configure(text="")
+            return
+        with_ports = sum(1 for d in self._devices.values() if open_ports(d))
+        parts = [f"{total} device{'s' if total != 1 else ''}", f"{with_ports} with open ports"]
+        risky = sum(1 for d in self._devices.values() if d.risk_score >= 40)
+        if risky:
+            parts.append(f"{risky} at risk")
+        if self._new_devices:
+            parts.append(f"{len(self._new_devices)} new")
+        if self._gone:
+            parts.append(f"{len(self._gone)} gone")
+        shown = self._tree.row_count()
+        if shown != total:
+            parts.append(f"{shown} shown")
+        self._summary_label.configure(text=", ".join(parts))
+
+    def _rescan_host(self, ip: str) -> None:
+        self._rescan_hosts([ip])
+
+    def _rescan_hosts(self, ips: list[str]) -> None:
+        if self._scanning or not ips:
+            return
+        try:
+            request = self._build_request(",".join(ips))
+        except ValueError as exc:
+            messagebox.showerror(APP_NAME, f"Invalid port list: {exc}", parent=self)
+            return
+        self._start_scan(request, clear=False)
+
+    def _rescan_selected(self) -> None:
+        ips = self._tree.get_selected_ips()
+        if ips:
+            self._rescan_hosts(ips)
+        else:
+            self._set_status("Select a device to rescan it")
+
+    def _scan_subnet(self, ip: str) -> None:
+        if self._scanning:
+            return
+        network = ipaddress.ip_network(f"{ip}/24", strict=False)
+        self._range_entry.set(str(network))
+        self._on_scan_click()
+
+    # ------------------------------------------------------------------ #
+    # Changes dialog, names and notes
+    # ------------------------------------------------------------------ #
     def _show_changes(self) -> None:
         """Dialog listing what appeared and disappeared since the last scan."""
-        self.title(f"{APP_NAME} {APP_VERSION}")
-        lines = []
-        new = sorted(self._new_devices, key=ip_key)
-        lines.append(f"NEW ({len(new)}) — never seen before")
-        for ip in new:
+        self.title(APP_NAME)
+        rows: list[tuple[str, str, str, str]] = []
+        for ip in sorted(self._new_devices, key=ip_key):
             dev = self._devices.get(ip)
-            name = self._label_for(dev).get("name") or (dev.hostname or dev.vendor if dev else "")
-            lines.append(f"  + {ip:<16} {dev.mac_address or '-' if dev else '-':<18} {name or ''}")
-        if not new:
-            lines.append("  (none)")
-        lines.append("")
-        lines.append(f"GONE ({len(self._gone)}) — answered the previous scan, not this one")
+            name = (self._label_for(dev).get("name") or dev.hostname or dev.vendor) if dev else ""
+            rows.append(("New", ip, (dev.mac_address if dev else "") or "", name or ""))
         for info in sorted(self._gone, key=lambda i: ip_key(i["ip"])):
             label = self.settings.device_labels.get(info["key"], {}).get("name") or info["name"]
-            mac = info["key"] if info["key"] != info["ip"] else "-"
-            lines.append(f"  - {info['ip']:<16} {mac:<18} {label}")
-        if not self._gone:
-            lines.append("  (none)")
-        if not self._devices:
-            lines = ["Run a complete scan first; changes are measured against the",
-                     "previous complete scan of the same range."]
-        self._text_dialog("Changes since last scan", "\n".join(lines))
+            mac = info["key"] if info["key"] != info["ip"] else ""
+            rows.append(("Gone", info["ip"], mac, label))
 
-    def _text_dialog(self, title: str, text: str) -> None:
-        window = ctk.CTkToplevel(self)
-        window.title(title)
-        window.geometry("620x380")
+        window = tk.Toplevel(self)
+        window.title("Changes since last scan")
+        window.geometry("560x320")
         window.transient(self)
-        box = ctk.CTkTextbox(window, font=("Consolas", 11))
-        box.pack(fill="both", expand=True, padx=10, pady=(10, 6))
-        box.insert("1.0", text)
-        box.configure(state="disabled")
-        ctk.CTkButton(window, text="Close", width=90, command=window.destroy).pack(pady=(0, 10))
+        frame = ttk.Frame(window, padding=8)
+        frame.pack(fill="both", expand=True)
+        if not self._devices:
+            text = ("Run a complete scan first. Changes are measured against the previous "
+                    "complete scan of the same range.")
+        else:
+            text = (f"{len(self._new_devices)} new device(s) and {len(self._gone)} device(s) "
+                    f"that no longer answer, compared with the previous scan of "
+                    f"{self._last_range}.")
+        ttk.Label(frame, text=text, wraplength=530).pack(anchor="w", pady=(0, 6))
+        tree = ttk.Treeview(frame, columns=("change", "ip", "mac", "name"), show="headings",
+                            height=8)
+        for column, heading, width in (("change", "Change", 70), ("ip", "IP", 110),
+                                       ("mac", "MAC address", 130), ("name", "Name", 200)):
+            tree.heading(column, text=heading, anchor="w")
+            tree.column(column, width=width, anchor="w")
+        tree.tag_configure("Gone", foreground=theme.PALETTE.danger)
+        tree.tag_configure("New", foreground=theme.PALETTE.new)
+        for row in rows:
+            tree.insert("", "end", values=row, tags=(row[0],))
+        tree.pack(fill="both", expand=True)
+        ttk.Button(frame, text="Close", command=window.destroy).pack(anchor="e", pady=(8, 0))
+        window.bind("<Escape>", lambda _e: window.destroy())
         window.after(50, window.focus_force)
+        self._changes_window = window
 
-    # -- custom names and notes ------------------------------------------ #
     def _label_for(self, device: Device | None) -> dict:
         if device is None:
             return {}
@@ -914,38 +1086,38 @@ class IPInspectorApp(ctk.CTk):
         if device is None:
             return
         current = self._label_for(device)
-        window = ctk.CTkToplevel(self)
-        window.title(f"Rename {ip}")
-        window.geometry("440x230")
+        window = tk.Toplevel(self)
+        window.title("Rename device")
         window.resizable(False, False)
         window.transient(self)
-        window.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(window, text=f"{ip}   {device.mac_address or ''}   "
-                                  f"{device.hostname or device.vendor or ''}",
-                     text_color=c("text_muted")).grid(row=0, column=0, columnspan=2,
-                                                      padx=14, pady=(14, 8), sticky="w")
-        ctk.CTkLabel(window, text="Name:").grid(row=1, column=0, padx=(14, 8), sticky="e")
-        name = ctk.CTkEntry(window, placeholder_text="e.g. Living room TV")
-        name.grid(row=1, column=1, padx=(0, 14), pady=4, sticky="ew")
+        frame = ttk.Frame(window, padding=12)
+        frame.pack(fill="both", expand=True)
+        frame.columnconfigure(1, weight=1)
+        ttk.Label(frame, text=f"{ip}    {device.mac_address or ''}    "
+                              f"{device.hostname or device.vendor or ''}",
+                  style="Muted.TLabel").grid(row=0, column=0, columnspan=2, sticky="w",
+                                             pady=(0, 8))
+        ttk.Label(frame, text="Name:").grid(row=1, column=0, sticky="w", padx=(0, 8))
+        name = ttk.Entry(frame, width=40)
+        name.grid(row=1, column=1, sticky="ew", pady=2)
         name.insert(0, current.get("name", ""))
-        ctk.CTkLabel(window, text="Note:").grid(row=2, column=0, padx=(14, 8), sticky="e")
-        note = ctk.CTkEntry(window, placeholder_text="optional")
-        note.grid(row=2, column=1, padx=(0, 14), pady=4, sticky="ew")
+        ttk.Label(frame, text="Note:").grid(row=2, column=0, sticky="w", padx=(0, 8))
+        note = ttk.Entry(frame, width=40)
+        note.grid(row=2, column=1, sticky="ew", pady=2)
         note.insert(0, current.get("note", ""))
 
         def save() -> None:
             self.set_label(ip, name.get(), note.get())
             window.destroy()
 
-        buttons = ctk.CTkFrame(window, fg_color="transparent")
-        buttons.grid(row=3, column=0, columnspan=2, pady=16)
-        ctk.CTkButton(buttons, text="Save", width=90, command=save).pack(side="left", padx=4)
-        ctk.CTkButton(buttons, text="Cancel", width=90, fg_color="transparent",
-                      border_width=1, text_color=c("text_primary"),
-                      command=window.destroy).pack(side="left", padx=4)
-        name.bind("<Return>", lambda _e: save())
-        note.bind("<Return>", lambda _e: save())
-        window.after(50, lambda: (window.focus_force(), name.focus_set()))
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=3, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        ttk.Button(buttons, text="OK", default="active", command=save).pack(side="left")
+        ttk.Button(buttons, text="Cancel", command=window.destroy).pack(side="left", padx=(6, 0))
+        window.bind("<Return>", lambda _e: save())
+        window.bind("<Escape>", lambda _e: window.destroy())
+        window.after(50, lambda: (window.focus_force(), name.focus_set(),
+                                  name.select_range(0, tk.END)))
 
     def set_label(self, ip: str, name: str, note: str = "") -> None:
         """Store (or clear, when both are empty) a device's custom name and note."""
@@ -965,7 +1137,9 @@ class IPInspectorApp(ctk.CTk):
             self._detail.set_device(device, self._label_for(device))
         self._refresh_favorites()
 
-    # -- automatic rescans ------------------------------------------------ #
+    # ------------------------------------------------------------------ #
+    # Automatic rescans
+    # ------------------------------------------------------------------ #
     def _on_auto_change(self) -> None:
         minutes = AUTO_RESCAN.get(self._auto_menu.get(), 0)
         self.settings.auto_rescan = minutes
@@ -973,7 +1147,7 @@ class IPInspectorApp(ctk.CTk):
         self._cancel_auto()
         if minutes and self._devices and not self._scanning:
             self._schedule_auto()
-            self._set_status(f"Auto-rescan every {minutes} min · next scan at "
+            self._set_status(f"Auto-rescan every {minutes} min; next scan at "
                              f"{datetime.fromtimestamp(self._auto_due):%H:%M}")
         elif not minutes:
             self._set_status("Auto-rescan off")
@@ -1006,40 +1180,6 @@ class IPInspectorApp(ctk.CTk):
         self._auto_run = True
         self._start_scan(request, clear=True)
 
-    def _update_summary(self) -> None:
-        total = len(self._devices)
-        with_ports = sum(1 for d in self._devices.values() if open_ports(d))
-        risky = sum(1 for d in self._devices.values() if d.risk_score >= 40)
-        parts = [f"{total} device{'s' if total != 1 else ''}",
-                 f"{with_ports} with open ports"]
-        if risky:
-            parts.append(f"{risky} at risk")
-        if self._new_devices:
-            parts.append(f"{len(self._new_devices)} new")
-        if self._gone:
-            parts.append(f"{len(self._gone)} gone")
-        shown = self._tree.row_count()
-        if shown != total:
-            parts.append(f"{shown} shown")
-        self._summary_label.configure(text="  ·  ".join(parts) if total else "")
-
-    def _rescan_host(self, ip: str) -> None:
-        if self._scanning:
-            return
-        try:
-            request = self._build_request(ip)
-        except ValueError as exc:
-            messagebox.showerror(APP_NAME, f"Invalid port list: {exc}")
-            return
-        self._start_scan(request, clear=False)
-
-    def _rescan_selected(self) -> None:
-        ip = self._tree.get_selected_ip()
-        if ip:
-            self._rescan_host(ip)
-        else:
-            self._set_status("Select a device to rescan it.")
-
     # ------------------------------------------------------------------ #
     # Device actions
     # ------------------------------------------------------------------ #
@@ -1051,6 +1191,37 @@ class IPInspectorApp(ctk.CTk):
         device = self._devices.get(ip)
         self._detail.set_device(device, self._label_for(device))
 
+    def _on_device_expand(self, ip: str) -> None:
+        """List shared folders the first time a Windows host is expanded."""
+        dev = self._devices.get(ip)
+        if dev is None or ip in self._shares_requested or sys.platform != "win32":
+            return
+        if not {p.number for p in open_ports(dev)} & SMB_PORTS:
+            return
+        self._shares_requested.add(ip)
+        self._set_status(f"Reading shared folders of {ip}…")
+
+        def work() -> None:
+            result = nettools.list_shares(ip)
+            shares = result.data or []
+            self._call_soon(lambda: self._show_shares(ip, shares, result.error))
+
+        threading.Thread(target=work, name="shares", daemon=True).start()
+
+    def _show_shares(self, ip: str, shares: list, error: str) -> None:
+        self._tree.add_shares(ip, shares)
+        if shares:
+            self._set_status(f"{ip} shares {len(shares)} folder(s)")
+        else:
+            self._set_status(f"{ip}: no shared folders" + (f" ({error})" if error else ""))
+
+    def _open_share(self, ip: str, name: str) -> None:
+        if sys.platform == "win32":
+            try:
+                os.startfile(f"\\\\{ip}\\{name}")  # noqa: S606 - opens Explorer
+            except OSError as exc:
+                messagebox.showerror(APP_NAME, str(exc), parent=self)
+
     def _open_tool(self, name: str, values: dict, run: bool = False) -> None:
         self._tabview.set(TAB_TOOLS)
         if run:
@@ -1060,7 +1231,8 @@ class IPInspectorApp(ctk.CTk):
 
     def _monitor_host(self, ip: str) -> None:
         dev = self._devices.get(ip)
-        self._monitor.add_host(ip, label=(dev.hostname if dev else "") or ip)
+        label = (self._label_for(dev).get("name") or dev.hostname) if dev else ""
+        self._monitor.add_host(ip, label=label or ip)
         self._tabview.set(TAB_MONITOR)
 
     def _open_device_web(self, ip: str) -> None:
@@ -1070,13 +1242,15 @@ class IPInspectorApp(ctk.CTk):
         port = best_web_port(dev)
         if port:
             open_web(dev.ip_address, port)
+        elif {p.number for p in open_ports(dev)} & SMB_PORTS:
+            self._open_shares(ip)
         else:
-            self._set_status(f"{ip} has no open web port (80, 443, 8080…).")
+            self._set_status(f"{ip} has no web page or shared folders to open")
 
     def _open_rdp(self, ip: str) -> None:
         ok, message = open_remote_desktop(ip)
         if not ok:
-            messagebox.showerror(APP_NAME, message)
+            messagebox.showerror(APP_NAME, message, parent=self)
 
     def _open_ssh(self, ip: str) -> None:
         try:
@@ -1085,13 +1259,16 @@ class IPInspectorApp(ctk.CTk):
             else:
                 subprocess.Popen(["x-terminal-emulator", "-e", "ssh", ip])
         except OSError as exc:
-            messagebox.showerror(APP_NAME, f"Could not start ssh: {exc}")
+            messagebox.showerror(APP_NAME, f"Could not start ssh: {exc}", parent=self)
 
     def _open_shares(self, ip: str) -> None:
         if sys.platform == "win32":
-            os.startfile(f"\\\\{ip}")  # noqa: S606 - opens Explorer on the share list
+            try:
+                os.startfile(f"\\\\{ip}")  # noqa: S606 - opens Explorer on the share list
+            except OSError as exc:
+                messagebox.showerror(APP_NAME, str(exc), parent=self)
         else:
-            messagebox.showinfo(APP_NAME, f"Open smb://{ip} in your file manager.")
+            messagebox.showinfo(APP_NAME, f"Open smb://{ip} in your file manager.", parent=self)
 
     def _wake(self, ip: str) -> None:
         dev = self._devices.get(ip)
@@ -1101,17 +1278,56 @@ class IPInspectorApp(ctk.CTk):
         if ok:
             self._set_status(f"Wake-on-LAN packet sent to {message}")
         else:
-            messagebox.showerror("Wake-on-LAN", message)
+            messagebox.showerror("Wake-on-LAN", message, parent=self)
+
+    def _power(self, ip: str, action: str) -> None:
+        dev = self._devices.get(ip)
+        name = (self._label_for(dev).get("name") or dev.hostname) if dev else ""
+        target = f"{name} ({ip})" if name else ip
+        if action != "abort":
+            verb = "shut down" if action == "shutdown" else "restart"
+            if not messagebox.askyesno(
+                    "Confirm", f"Ask {target} to {verb} in 30 seconds?\n\n"
+                               "The remote computer must allow it and you need administrator "
+                               "rights on it. Its user sees a warning and can be told to "
+                               "save their work.", icon="warning", parent=self):
+                return
+        ok, message = remote_power(ip, action)
+        if ok:
+            self._set_status(message)
+        else:
+            messagebox.showerror(APP_NAME, message, parent=self)
 
     def _copy(self, text: str) -> None:
         if not text:
             return
         self.clipboard_clear()
         self.clipboard_append(text)
-        self._set_status(f"Copied: {text[:80]}")
+        self._set_status(f"Copied to clipboard: {text.splitlines()[0][:60]}")
+
+    def _copy_selected(self) -> None:
+        """Selected rows as tab-separated text (pastes into Excel)."""
+        ips = self._tree.get_selected_ips()
+        if not ips:
+            return
+        header = "\t".join(label for label, *_rest in TREE_COLUMNS)
+        rows = [header] + ["\t".join(device_row(self._devices[ip],
+                                                self._label_for(self._devices[ip]).get("name", "")))
+                           for ip in ips if ip in self._devices]
+        self._copy("\n".join(rows))
+        self._set_status(f"Copied {len(rows) - 1} row(s)")
+
+    def _on_ctrl_c(self, event) -> None:
+        if event.widget is self._tree._tree:
+            self._copy_selected()
+
+    def _select_all(self) -> None:
+        self._tabview.set(TAB_SCANNER)
+        self._tree._tree.selection_set(self._tree._tree.get_children())
 
     def _toggle_detail(self) -> None:
-        self._detail.toggle()
+        self._props_var.set(not self._props_var.get())
+        self._apply_props_visibility()
 
     # -- filter ---------------------------------------------------------- #
     def _apply_filter(self) -> None:
@@ -1126,10 +1342,18 @@ class IPInspectorApp(ctk.CTk):
     def _focus_filter(self) -> None:
         self._tabview.set(TAB_SCANNER)
         self._filter_entry.focus_set()
+        self._filter_entry.select_range(0, tk.END)
 
     # -- favorites ------------------------------------------------------- #
     def _toggle_favorite(self, ip: str) -> None:
         favorites = self._favorites ^ {ip}
+        self.settings.favorites = sorted(favorites, key=ip_key)
+        self.settings.save()
+        self._tree.set_marks(favorites)
+        self._refresh_favorites()
+
+    def _add_favorites(self, ips: list[str]) -> None:
+        favorites = self._favorites | set(ips)
         self.settings.favorites = sorted(favorites, key=ip_key)
         self.settings.save()
         self._tree.set_marks(favorites)
@@ -1142,9 +1366,9 @@ class IPInspectorApp(ctk.CTk):
             if dev:
                 name = self._label_for(dev).get("name") or dev.hostname or dev.vendor or ""
                 ports = dev.ports_compact()
-                line = f"●  {ip}   {name}   [{ports}]"
+                line = f"  {ip:<16} {name:<32} online    ports: {ports}"
             else:
-                line = f"○  {ip}   (not seen in the current scan)"
+                line = f"  {ip:<16} {'':<32} not seen in the current results"
             self._favs_list.insert(tk.END, line)
 
     def _fav_ip_at(self, index: int) -> str:
@@ -1155,15 +1379,13 @@ class IPInspectorApp(ctk.CTk):
         if not sel:
             return
         ip = self._fav_ip_at(sel[0])
+        self._tabview.set(TAB_SCANNER)
         if ip in self._devices:
-            self._tabview.set(TAB_SCANNER)
             self._tree.select(ip)
             self._on_device_selected(ip)
         else:
-            self._range_entry.delete(0, tk.END)
-            self._range_entry.insert(0, ip)
-            self._tabview.set(TAB_SCANNER)
-            self._set_status(f"{ip} is not in the current results — press Scan to probe it.")
+            self._range_entry.set(ip)
+            self._set_status(f"{ip} is not in the current results; press Scan to probe it")
 
     def _on_fav_delete(self, _event) -> None:
         sel = self._favs_list.curselection()
@@ -1172,17 +1394,19 @@ class IPInspectorApp(ctk.CTk):
 
     def _forget_known(self) -> None:
         if messagebox.askyesno(APP_NAME, "Forget every known device?\n\n"
-                                         "The next scan becomes the new baseline."):
+                                         "The next scan becomes the new baseline for the "
+                                         "\"new device\" markers.", parent=self):
             self.settings.known_devices = {}
             self.settings.save()
             self._new_devices.clear()
             self._tree.set_marks(self._favorites, set())
             self._update_summary()
 
-    # -- export / report ------------------------------------------------- #
+    # -- files ----------------------------------------------------------- #
     def _require_devices(self) -> bool:
         if not self._devices:
-            messagebox.showwarning(APP_NAME, "There are no results yet. Run a scan first.")
+            messagebox.showwarning(APP_NAME, "There are no results yet. Run a scan first.",
+                                   parent=self)
             return False
         return True
 
@@ -1193,8 +1417,8 @@ class IPInspectorApp(ctk.CTk):
         if self._scanning or not self._require_devices():
             return
         path = filedialog.asksaveasfilename(
-            title="Export results", defaultextension=".csv",
-            filetypes=[("CSV (Excel)", "*.csv"), ("JSON", "*.json")],
+            parent=self, title="Save results as", defaultextension=".csv",
+            filetypes=[("CSV (Excel)", "*.csv"), ("JSON (can be reopened)", "*.json")],
             initialfile=f"ip_inspector_{datetime.now():%Y%m%d_%H%M}",
         )
         if not path:
@@ -1205,15 +1429,50 @@ class IPInspectorApp(ctk.CTk):
                                             "profile": self._last_profile})
         except Exception as exc:  # noqa: BLE001
             logger.exception("export failed")
-            messagebox.showerror(APP_NAME, f"Export failed:\n{exc}")
+            messagebox.showerror(APP_NAME, f"Could not save the results:\n{exc}", parent=self)
             return
-        self._set_status(f"Exported {len(self._devices)} devices to {written}")
+        self._set_status(f"Saved {len(self._devices)} devices to {written}")
+
+    def _open_results(self) -> None:
+        if self._scanning:
+            return
+        path = filedialog.askopenfilename(
+            parent=self, title="Open results", filetypes=[("IP Inspector results", "*.json")])
+        if path:
+            self.load_results(path)
+
+    def load_results(self, path: str) -> bool:
+        """Replace the table with devices saved earlier as JSON."""
+        try:
+            devices, session = load_json(path)
+        except ValueError as exc:
+            messagebox.showerror(APP_NAME, str(exc), parent=self)
+            return False
+        self._devices.clear()
+        self._new_devices.clear()
+        self._gone = []
+        self._shares_requested.clear()
+        self._tree.clear()
+        self._detail.set_device(None)
+        for device in devices:
+            self._on_device_event(device)
+        self._last_range = str(session.get("range", ""))
+        if self._last_range:
+            self._range_entry.set(self._last_range)
+            self._preview_range()
+        self._tabview.set(TAB_SCANNER)
+        when = str(session.get("generated", "")).replace("T", " ")
+        self._set_status(f"Opened {Path(path).name}: {len(devices)} devices"
+                         + (f" (saved {when})" if when else ""))
+        self._update_summary()
+        self._refresh_favorites()
+        return True
 
     def _report(self) -> None:
         if self._scanning or not self._require_devices():
             return
         path = filedialog.asksaveasfilename(
-            title="Security report", defaultextension=".html",
+            parent=self, title="Security report", defaultextension=".html",
             filetypes=[("HTML", "*.html"), ("PDF", "*.pdf")],
             initialfile=f"network_report_{datetime.now():%Y%m%d_%H%M}",
         )
@@ -1226,10 +1485,11 @@ class IPInspectorApp(ctk.CTk):
             written = build_report(self._sorted_devices(), path, fmt=fmt)
         except Exception as exc:  # noqa: BLE001
             logger.exception("report failed")
-            messagebox.showerror(APP_NAME, f"Could not build the report:\n{exc}")
+            messagebox.showerror(APP_NAME, f"Could not build the report:\n{exc}", parent=self)
             return
         self._set_status(f"Report saved to {written}")
-        if messagebox.askyesno(APP_NAME, f"Report saved to:\n{written}\n\nOpen it now?"):
+        if messagebox.askyesno(APP_NAME, f"Report saved to:\n{written}\n\nOpen it now?",
+                               parent=self):
             try:
                 os.startfile(str(written))  # noqa: S606
             except (OSError, AttributeError):
@@ -1249,50 +1509,55 @@ class IPInspectorApp(ctk.CTk):
         try:
             code = ctypes.windll.shell32.ShellExecuteW(None, "runas", program, params, cwd, 1)
         except (AttributeError, OSError) as exc:
-            messagebox.showerror(APP_NAME, f"Could not restart: {exc}")
+            messagebox.showerror(APP_NAME, f"Could not restart: {exc}", parent=self)
             return
         if code > 32:
             self.destroy()
 
     def _show_about(self) -> None:
         messagebox.showinfo(
-            "About",
-            f"{APP_NAME} {APP_VERSION}\nby {APP_AUTHOR}\n\n"
-            "Network and port scanner for your local network:\n"
-            "host discovery, port scanning, device identification,\n"
-            "security findings, diagnostics tools and monitoring.\n\n"
-            "Only scan networks you own or are authorised to test.")
+            f"About {APP_NAME}",
+            f"{APP_NAME} {APP_VERSION}\n{APP_AUTHOR}\n\n"
+            "Network scanner for local networks: finds devices, open ports and "
+            "shared folders, and includes diagnostic tools and a host monitor.\n\n"
+            "Only scan networks you own or are allowed to test.", parent=self)
 
     def _show_help(self) -> None:
         messagebox.showinfo(
             "Quick guide",
-            "SCANNER\n"
-            "• Your local range is filled in. Pick an adapter or type a range:\n"
-            "  192.168.1.0/24, 192.168.1.1-100, 10.0.0.5 (comma-separated ok).\n"
-            "• Profile: Quick, Standard, Full (1-1024), IoT, Ping sweep, Custom.\n"
-            "• Options (F8): custom ports, timeout, threads, name resolution.\n"
-            "• Click a device for details; arrow shows services; double-click\n"
-            "  opens its web page; right-click for RDP, SSH, shares, ping,\n"
-            "  traceroute, full port scan, TLS, monitor, Wake-on-LAN…\n"
-            "• NEW marks devices never seen before. ★ marks favorites.\n"
-            "• F2 or right-click › Rename gives a device your own name and note.\n"
-            "• Ctrl+D lists devices that appeared or disappeared since the\n"
-            "  previous scan; Options › Auto-rescan repeats it and alerts.\n\n"
-            "TOOLS: ping, traceroute, port check, DNS, WHOIS, TLS, HTTP\n"
-            "headers, subnet calculator, ARP table, listening ports…\n\n"
-            "MONITOR: watch hosts continuously and get alerted when they drop.\n\n"
-            "SHORTCUTS\n"
-            "F5 scan · Esc stop · Ctrl+R rescan device · Ctrl+F filter\n"
-            "Ctrl+S export · Ctrl+P report · Ctrl+T tools · Ctrl+M monitor\n"
-            "Ctrl+D changes · F2 rename · F8 options · F9 details panel\n\n"
-            "COMMAND LINE: python -m ip_inspector 192.168.1.0/24 -p quick")
+            "Scanning\n"
+            "  Type a range (192.168.1.0/24, 192.168.1.1-100, 10.0.0.5) or pick an "
+            "adapter, choose a profile and press Scan (F5). Esc stops.\n\n"
+            "Results\n"
+            "  Click a device to see its properties. Expand it to list its services and "
+            "shared folders. Double-click or Enter opens its web page or shares. "
+            "Right-click for Open with, Tools, Power and Copy.\n\n"
+            "Markers\n"
+            "  Blue: new device. Orange/red: security findings. Star: favorite.\n\n"
+            "Keyboard\n"
+            "  F5 Scan, Esc Stop, Ctrl+R Rescan, F2 Rename, Ctrl+C Copy rows, "
+            "Ctrl+F Search, Ctrl+D Changes, F8 Options, F9 Properties, "
+            "Ctrl+O Open results, Ctrl+S Save results, Ctrl+P Report.\n\n"
+            "Command line\n"
+            "  python -m ip_inspector 192.168.1.0/24 -p quick", parent=self)
 
     # ------------------------------------------------------------------ #
     # Lifecycle
     # ------------------------------------------------------------------ #
+    def _save_geometry(self) -> None:
+        try:
+            zoomed = self.state() == "zoomed"
+            if not zoomed:
+                self.settings.window_geometry = self.geometry()
+            self.settings.window_zoomed = zoomed
+            self.settings.save()
+        except tk.TclError:
+            pass
+
     def destroy(self) -> None:
         self._stop_event.set()
         self._cancel_auto()
+        self._save_geometry()
         try:
             self._monitor.shutdown()
         except Exception:  # noqa: BLE001
@@ -1307,6 +1572,7 @@ class IPInspectorApp(ctk.CTk):
 
 def launch() -> None:
     """Create the main window and start the tkinter event loop."""
+    theme.enable_dpi_awareness()
     app = IPInspectorApp()
     app.mainloop()
 

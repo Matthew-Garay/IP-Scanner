@@ -6,22 +6,22 @@ IP Inspector is a Windows desktop application that scans the local network, disc
 
 ## B. System Architecture
 
-The program follows a layered architecture where each layer only imports from the layers below it. The interface layer (CustomTkinter) talks to the user and sends requests to the actions layer. The actions layer coordinates with the analysis layer to interpret security findings. The analysis layer relies on the network and scanning layer to obtain device data. The network and scanning layer uses the domain models defined in the core layer. Data flows from the interface to the scanning engine, and results travel back the same way to be shown on screen. Long-running work runs on a worker thread that delivers results through a queue.Queue, and the main thread consumes them so the window never freezes. See [ARCHITECTURE.md](ARCHITECTURE.md) for details.
+The program follows a layered architecture where each layer only imports from the layers below it. The interface layer (Tkinter/ttk, using native Windows controls) talks to the user and sends requests to the actions layer. The actions layer coordinates with the analysis layer to interpret security findings. The analysis layer relies on the network and scanning layer to obtain device data. The network and scanning layer uses the domain models defined in the core layer. Data flows from the interface to the scanning engine, and results travel back the same way to be shown on screen. Long-running work runs on a worker thread that delivers results through a queue.Queue, and the main thread consumes them so the window never freezes. See [ARCHITECTURE.md](ARCHITECTURE.md) for details.
 
 ## C. Key Technical Features
 
 - **Network scan:** host discovery (ARP sweep, ICMP and TCP probes) plus TCP port scanning, including VPN subnets.
 - **Scan profiles:** Quick, Standard (top ~100 ports), Full (1-1024), IoT / Cameras, Ping sweep only, and Custom port lists such as `22,80,443,8000-8100`.
 - **Scan options:** network adapter selector, timeout, thread count, hostname resolution and model identification toggles.
-- **Results:** sortable, filterable table with expandable services per device, a details panel, risk score and security findings.
+- **Results:** native Windows grid (sortable, multi-select, Ctrl+C copies rows for Excel) where each device expands to its services and **shared folders**, plus a property panel with risk score and security findings.
 - **Change detection:** devices never seen before are flagged **NEW**, devices that stopped answering are listed as **gone** (Ctrl+D), and an optional **auto-rescan** (every 5-60 min) alerts you when something changes.
 - **Your own names:** give any device a custom name and a note (F2); they follow its MAC address even when its IP changes. Favorites (★) are remembered between sessions.
 - **Command line:** scan without the window and export to CSV/JSON, e.g. for scheduled tasks (see below).
-- **Device actions (right-click):** open in browser, Remote Desktop, SSH, browse shared folders, rescan, full 1-65535 port scan, ping, traceroute, TLS certificate, HTTP security headers, Wake-on-LAN, copy IP/MAC, add to monitor.
+- **Device actions (right-click or the Actions menu):** open with HTTP, HTTPS, FTP, Remote Desktop, SSH or shared folders; rescan, scan its /24 subnet, full 1-65535 port scan, ping, traceroute, TLS certificate, HTTP security headers; **power: Wake-on-LAN, remote shut down / restart / cancel** of Windows PCs; rename, favorites, copy. Several selected devices can be rescanned, woken or copied at once.
 - **Tools tab:** Ping, Traceroute, Port check, Wake-on-LAN, DNS lookup, Reverse DNS, DNS summary, Mail security (SPF/DMARC/MX), Zone transfer, WHOIS, TLS certificate, HTTP headers, Subnet calculator, Subnet split, IP-in-network, Network adapters, ARP table, Listening ports and Local exposure.
 - **Monitor tab:** continuous reachability checks with latency, uptime, loss statistics, an event log and an alert sound when a host goes down.
-- **Export and reports:** CSV / JSON export and HTML / PDF security reports.
-- Light, dark and system themes; keyboard shortcuts for every main action.
+- **Files:** save results as CSV or JSON, **reopen saved JSON results** later (File › Open results), and HTML / PDF security reports.
+- Remembers window size and position, recent address ranges and options; keyboard shortcuts for every main action.
 - No persistent database and no network protocol of its own beyond local scanning; preferences live in `~/.ip_inspector/settings.json`.
 - Responsible use: the tool probes other machines and must only be used with permission.
 
@@ -30,7 +30,7 @@ The program follows a layered architecture where each layer only imports from th
 | Category | Technology / Library |
 |----------|----------------------|
 | Language | Python 3.10+ (3.13 recommended) |
-| GUI | CustomTkinter |
+| GUI | Tkinter / ttk (standard library, native Windows theme) |
 | Networking | scapy, psutil, mac-vendor-lookup |
 | Packaging | PyInstaller |
 | Operating system | Windows |
@@ -86,6 +86,7 @@ Without arguments, `python -m ip_inspector` opens the window.
 | Ctrl+S / Ctrl+P | Export results / security report |
 | Ctrl+T / Ctrl+M | Tools tab / Monitor tab |
 | Ctrl+D / F2 | Changes since last scan / rename the selected device |
+| Ctrl+O / Ctrl+C | Open saved results / copy selected rows |
 | F8 / F9 | Scan options / details panel |
 
 ### Tests

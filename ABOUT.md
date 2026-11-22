@@ -11,14 +11,15 @@ A Windows desktop application that scans the local network, discovers connected 
 - Network tools: ping, traceroute, port check, DNS, WHOIS, mail security, subnet calculator, ARP table, listening ports, Wake-on-LAN.
 - Change detection: new devices are flagged against earlier scans; favorites are remembered.
 - Monitor: continuous availability checks with uptime statistics and alerts.
-- CSV / JSON export and HTML / PDF reports; light and dark themes.
+- CSV / JSON export (reopenable) and HTML / PDF reports.
+- Native Windows interface: results grid with shared folders, property panel, remote shutdown/restart and Wake-on-LAN.
 
 ## Technology stack
 
 | Category | Technology |
 |----------|------------|
 | Language | Python 3.10+ |
-| GUI | CustomTkinter |
+| GUI | Tkinter / ttk (native Windows controls) |
 | Networking | scapy, psutil, mac-vendor-lookup |
 | Packaging | PyInstaller |
 | Operating system | Windows |

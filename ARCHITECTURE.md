@@ -1,7 +1,7 @@
 # IP Inspector Architecture
 
-IP Inspector is a desktop network scanner for Windows with a `customtkinter`
-interface. It runs fully offline and never sends data to any server.
+IP Inspector is a desktop network scanner for Windows with a Tkinter/ttk
+interface that uses the native Windows controls (the `vista` ttk theme). It runs fully offline and never sends data to any server.
 
 ## Layers
 
@@ -48,11 +48,11 @@ never drift apart again (that mismatch once kept every result off screen).
 | Module | Responsibility |
 |--------|----------------|
 | `interface/ui.py` | Main window, menu bar, Scanner and Favorites tabs, scan lifecycle, context menu |
-| `interface/widgets.py` | `DeviceTree` (results table) and `DetailPanel` |
+| `interface/widgets.py` | `DeviceTree` (results grid with services and shared folders), `PropertyPanel`, ttk helpers |
 | `interface/tools_tab.py` | Tools tab; every tool is one entry in the `TOOLS` table |
 | `interface/monitor_tab.py` | Monitor tab on top of `nettools/monitor.py` |
 | `interface/settings.py` | Preferences, favorites and known devices in `~/.ip_inspector/settings.json` |
-| `interface/theme.py` | Light and dark palettes |
+| `interface/theme.py` | Native ttk style, DPI scaling (`px`) and the small icons, drawn in code |
 
 ## Adding a tool
 

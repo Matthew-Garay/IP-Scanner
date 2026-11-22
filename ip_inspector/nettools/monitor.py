@@ -326,12 +326,22 @@ class Monitor:
             with self._lock:
                 hosts = list(self._hosts.values())
             tasks = [loop.create_task(self._poll_forever(host)) for host in hosts]
-            loop.run_until_complete(asyncio.gather(*tasks))
+            loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
         except (RuntimeError, asyncio.CancelledError):
             pass
         finally:
-            for task in asyncio.all_tasks(loop):
+            pending = asyncio.all_tasks(loop)
+            for task in pending:
                 task.cancel()
+            # Let the cancelled tasks unwind before closing the loop; closing
+            # it with tasks still pending printed "Task was destroyed but it
+            # is pending!" for every watched host on exit.
+            if pending:
+                try:
+                    loop.run_until_complete(
+                        asyncio.gather(*pending, return_exceptions=True))
+                except RuntimeError:
+                    pass
             try:
                 loop.close()
             except Exception:  # noqa: BLE001

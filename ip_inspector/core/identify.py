@@ -139,6 +139,14 @@ def clean_banner(data: bytes) -> str:
     dropping control characters keeps whatever text is there instead of
     failing on the bytes around it.
     """
+    if re.search(rb"[\x00-\x08\x0b\x0c\x0e-\x1f]", data):
+        # A binary greeting: keep only runs of four or more printable ASCII
+        # characters, the way the `strings` utility does. Without this, a
+        # MySQL handshake showed up as "E ÿj Host ..." - the length and
+        # status bytes happen to be printable Latin-1 characters.
+        runs = re.findall(rb"[\x20-\x7e]{4,}", data)
+        text = " ".join(run.decode("ascii").strip() for run in runs)
+        return re.sub(r"\s+", " ", text).strip()[:BANNER_BYTES]
     text = data.decode("latin-1", errors="replace")
     # NetBIOS-style names and escape codes would otherwise leak into the cell.
     text = "".join(char if char.isprintable() else " " for char in text)

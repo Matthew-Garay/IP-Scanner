@@ -1,158 +1,233 @@
-"""Colour palettes of IP Inspector.
+"""Native look for IP Inspector: ttk styles, colours and small drawn icons.
 
-Two palettes, light and dark, in a neutral "network tool" style: greys and
-whites for surfaces, one strong colour for the Scan button and semantic
-colours reserved for state (green reachable, amber warning, red down).
+The window uses the operating system's own controls (the ``vista`` ttk
+theme on Windows) instead of custom-drawn widgets, so buttons, tabs, combo
+boxes and scroll bars look and behave like every other Windows utility.
 
-CustomTkinter widgets take ``(light, dark)`` pairs built from these and
-switch by themselves; native ttk/tk widgets are restyled from
-:func:`current` when the mode changes.
+Icons are drawn pixel by pixel into ``tk.PhotoImage`` objects at start-up:
+no image files to ship, nothing to license, and they scale with the font.
 """
 
 from __future__ import annotations
 
+import sys
+import tkinter as tk
 from dataclasses import dataclass
+from tkinter import font as tkfont
+from tkinter import ttk
 
 
 @dataclass(frozen=True)
 class Palette:
-    """Resolved colours for one appearance mode."""
+    """The few colours the native theme does not provide."""
 
-    #: Brand / action colour used for the Scan button and selected row.
-    primary: str
-    primary_hover: str
-    primary_active: str
-    #: Secondary action colour (secondary buttons, subtle accents).
-    accent: str
-    accent_hover: str
-    accent_text: str
-    #: Window page colour behind panels.
-    background: str
-    #: Panel / card background.
-    surface: str
-    #: Slightly offset surface for group strips and hover plates.
-    surface_alt: str
-    hover: str
-    text_primary: str
-    text_secondary: str
-    text_muted: str
-    header_bg: str
-    header_text: str
-    row_even: str
-    row_odd: str
-    grid_line: str
-    selection: str
-    selection_text: str
-    border: str
-    field: str
-    field_border: str
-    field_focus: str
-    chip: str
-    chip_text: str
-    input_bg: str
-    online: str
-    vpn: str
-    warning: str
-    state_ok: str
-    state_warn: str
-    state_off: str
-    state_idle: str
+    text: str = "#1F1F1F"
+    text_muted: str = "#6D6D6D"
+    row_alt: str = "#F5F7FA"
+    grid: str = "#E3E3E3"
+    selection: str = "#CCE4F7"
+    link: str = "#0066CC"
+    online: str = "#2E9E3E"
+    new: str = "#1F6FD1"
+    warning: str = "#D97B00"
+    danger: str = "#C62828"
+    favorite: str = "#E0A800"
+    offline: str = "#A0A0A0"
+    console_bg: str = "#FFFFFF"
+    header_bg: str = "#F0F0F0"
 
 
-#: Light scheme -- Advanced IP Scanner style.
-#: Neutral industrial greys, white panels, strong blue/green Scan button.
-LIGHT = Palette(
-    primary="#0078D4",
-    primary_hover="#0063B9",
-    primary_active="#004C8F",
-    accent="#2E7D32",
-    accent_hover="#1B5E20",
-    accent_text="#FFFFFF",
-    background="#F2F2F2",
-    surface="#FFFFFF",
-    surface_alt="#EDEDED",
-    hover="#D9D9D9",
-    text_primary="#323130",
-    text_secondary="#605E5C",
-    text_muted="#8A8886",
-    header_bg="#F2F2F2",
-    header_text="#323130",
-    row_even="#FFFFFF",
-    row_odd="#F7F7F7",
-    grid_line="#D0D0D0",
-    selection="#E2EFFF",
-    selection_text="#323130",
-    border="#C8C8C8",
-    field="#FFFFFF",
-    field_border="#A6A6A6",
-    field_focus="#0078D4",
-    chip="#EDEDED",
-    chip_text="#323130",
-    input_bg="#FFFFFF",
-    online="#2E7D32",
-    vpn="#F57C00",
-    warning="#D32F2F",
-    state_ok="#2E7D32",
-    state_warn="#F57C00",
-    state_off="#D32F2F",
-    state_idle="#9E9E9E",
-)
+PALETTE = Palette()
 
-#: Dark scheme: slate rather than pure black.
-DARK = Palette(
-    primary="#0A84FF",
-    primary_hover="#0060DF",
-    primary_active="#004C9E",
-    accent="#30D158",
-    accent_hover="#2CB248",
-    accent_text="#000000",
-    background="#1E1E1E",
-    surface="#252525",
-    surface_alt="#2D2D2D",
-    hover="#383838",
-    text_primary="#FFFFFF",
-    text_secondary="#C9C9C9",
-    text_muted="#858585",
-    header_bg="#252525",
-    header_text="#FFFFFF",
-    row_even="#252525",
-    row_odd="#2D2D2D",
-    grid_line="#3E3E3E",
-    selection="#2A4D8F",
-    selection_text="#FFFFFF",
-    border="#4A4A4A",
-    field="#323232",
-    field_border="#6E6E6E",
-    field_focus="#0A84FF",
-    chip="#383838",
-    chip_text="#FFFFFF",
-    input_bg="#323232",
-    online="#30D158",
-    vpn="#FF9F0A",
-    warning="#FF453A",
-    state_ok="#30D158",
-    state_warn="#FF9F0A",
-    state_off="#FF453A",
-    state_idle="#8E8E8E",
-)
+#: Screen scale factor (1.0 at 96 DPI, 1.25 at 120 DPI...), set by
+#: :func:`setup_style`. Treeview column widths and row heights are plain
+#: pixels and do not follow the font size, so they go through :func:`px`.
+SCALE = 1.0
 
 
-#: Appearance mode mirror. CustomTkinter does not expose a reliable
-#: public getter across versions, so we record it ourselves.
-_MODE: str = "light"
+def px(value: float) -> int:
+    """Scale a 96-DPI pixel size to the current screen."""
+    return int(round(value * SCALE))
 
-
-def set_mode(mode: str) -> None:
-    """Record the active appearance mode ("light", "dark" or CustomTkinter's names)."""
-    global _MODE
-    _MODE = "dark" if str(mode).lower() == "dark" else "light"
-
-
-def is_dark() -> bool:
-    """True when the application is in dark appearance mode."""
-    return _MODE == "dark"
+UI_FONT = ("Segoe UI", 9)
+UI_FONT_BOLD = ("Segoe UI", 9, "bold")
+TITLE_FONT = ("Segoe UI", 11, "bold")
+MONO_FONT = ("Consolas", 10)
 
 
 def current() -> Palette:
-    """Return the palette matching the active appearance mode."""
-    return DARK if is_dark() else LIGHT
+    return PALETTE
+
+
+def setup_style(root: tk.Misc) -> ttk.Style:
+    """Pick the native theme and add the handful of custom styles we need."""
+    global SCALE
+    try:
+        SCALE = max(1.0, root.winfo_fpixels("1i") / 96.0)
+    except tk.TclError:
+        SCALE = 1.0
+    style = ttk.Style(root)
+    for name in ("vista", "winnative", "clam"):
+        if name in style.theme_names():
+            style.theme_use(name)
+            break
+    default = tkfont.nametofont("TkDefaultFont")
+    default.configure(family=UI_FONT[0], size=UI_FONT[1])
+    for named in ("TkTextFont", "TkMenuFont", "TkHeadingFont"):
+        try:
+            tkfont.nametofont(named).configure(family=UI_FONT[0], size=UI_FONT[1])
+        except tk.TclError:
+            pass
+    root.option_add("*Font", default)
+
+    pal = PALETTE
+    style.configure("Treeview", rowheight=px(22), font=UI_FONT)
+    style.configure("Treeview.Heading", font=UI_FONT)
+    style.configure("Results.Treeview", rowheight=px(22))
+    style.map("Results.Treeview",
+              background=[("selected", pal.selection)],
+              foreground=[("selected", pal.text)])
+    style.configure("Props.Treeview", rowheight=px(20))
+    style.map("Props.Treeview",
+              background=[("selected", pal.selection)],
+              foreground=[("selected", pal.text)])
+    style.configure("Status.TLabel", padding=(6, 1))
+    style.configure("Muted.TLabel", foreground=pal.text_muted)
+    style.configure("Warn.TLabel", foreground=pal.warning)
+    style.configure("Title.TLabel", font=TITLE_FONT)
+    style.configure("Toolbar.TButton", padding=(6, 2))
+    style.configure("Toolbar.TFrame")
+    return style
+
+
+# --------------------------------------------------------------------------- #
+# Icons
+# --------------------------------------------------------------------------- #
+def _blank(size: int) -> tk.PhotoImage:
+    return tk.PhotoImage(width=size, height=size)
+
+
+def _hex_mix(colour: str, towards: str, ratio: float) -> str:
+    a = [int(colour[i:i + 2], 16) for i in (1, 3, 5)]
+    b = [int(towards[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(x + (y - x) * ratio):02x}" for x, y in zip(a, b))
+
+
+def dot(colour: str, size: int = 14, radius: float = 4.6) -> tk.PhotoImage:
+    """A small shaded disc, used as the status icon of a table row."""
+    image = _blank(size)
+    centre = (size - 1) / 2
+    edge = _hex_mix(colour, "#000000", 0.25)
+    light = _hex_mix(colour, "#FFFFFF", 0.35)
+    for y in range(size):
+        row = []
+        for x in range(size):
+            distance = ((x - centre) ** 2 + (y - centre) ** 2) ** 0.5
+            if distance <= radius - 1:
+                row.append(light if (x + y) < size - 3 else colour)
+            elif distance <= radius:
+                row.append(edge)
+            else:
+                row.append(None)
+        for x, pixel in enumerate(row):
+            if pixel:
+                image.put(pixel, (x, y))
+    return image
+
+
+def star(colour: str, size: int = 14) -> tk.PhotoImage:
+    """Five-pointed star for favourites (point-in-polygon rasterised)."""
+    import math
+
+    image = _blank(size)
+    centre, outer, inner = (size - 1) / 2, size / 2 - 0.5, size / 5
+    points = []
+    for i in range(10):
+        angle = math.pi / 2 + i * math.pi / 5
+        radius = outer if i % 2 == 0 else inner
+        points.append((centre + radius * math.cos(angle), centre - radius * math.sin(angle)))
+
+    def inside(px: float, py: float) -> bool:
+        result = False
+        j = len(points) - 1
+        for i, (xi, yi) in enumerate(points):
+            xj, yj = points[j]
+            if (yi > py) != (yj > py) and px < (xj - xi) * (py - yi) / (yj - yi) + xi:
+                result = not result
+            j = i
+        return result
+
+    edge = _hex_mix(colour, "#000000", 0.3)
+    for y in range(size):
+        for x in range(size):
+            if inside(x + 0.5, y + 0.5):
+                border = not all(inside(x + 0.5 + dx, y + 0.5 + dy)
+                                 for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+                image.put(edge if border else colour, (x, y))
+    return image
+
+
+def play(colour: str = "#2E9E3E", size: int = 16) -> tk.PhotoImage:
+    """Right-pointing triangle for the Scan button."""
+    image = _blank(size)
+    top, bottom, left = 2, size - 3, 4
+    height = bottom - top
+    for y in range(top, bottom + 1):
+        reach = left + int((height / 2 - abs(y - top - height / 2)) * 1.6)
+        for x in range(left, reach + 1):
+            image.put(colour, (x, y))
+    return image
+
+
+def square(colour: str = "#C62828", size: int = 16) -> tk.PhotoImage:
+    """Filled square for the Stop button."""
+    image = _blank(size)
+    image.put(colour, to=(4, 4, size - 4, size - 4))
+    return image
+
+
+def folder(size: int = 14) -> tk.PhotoImage:
+    """Folder glyph for shared-folder rows."""
+    image = _blank(size)
+    body, edge = "#F2C14E", "#B8862B"
+    image.put(edge, to=(1, 3, 6, 5))
+    image.put(edge, to=(1, 4, size - 1, size - 2))
+    image.put(body, to=(2, 5, size - 2, size - 3))
+    return image
+
+
+def service(size: int = 14) -> tk.PhotoImage:
+    """Small grey square for service (port) rows."""
+    image = _blank(size)
+    image.put("#7A869A", to=(4, 4, size - 4, size - 4))
+    image.put("#AEB7C4", to=(5, 5, size - 5, size - 5))
+    return image
+
+
+class Icons:
+    """All icons, created once per root window (PhotoImage needs a root)."""
+
+    def __init__(self) -> None:
+        pal = PALETTE
+        self.online = dot(pal.online)
+        self.new = dot(pal.new)
+        self.risk = dot(pal.warning)
+        self.danger = dot(pal.danger)
+        self.offline = dot(pal.offline)
+        self.favorite = star(pal.favorite)
+        self.scan = play()
+        self.stop = square()
+        self.folder = folder()
+        self.service = service()
+
+
+def enable_dpi_awareness() -> None:
+    """Crisp text on high-DPI Windows screens (call before creating the root)."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except (AttributeError, OSError):
+        pass

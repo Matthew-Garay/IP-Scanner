@@ -16,7 +16,7 @@ import tkinter
 
 
 class _QuietResult:
-    """Silence customtkinter's noise when each GUI test closes its window.
+    """Silence Tk's noise when each GUI test closes its window.
 
     Destroying a window leaves pending ``after()`` callbacks that Tk fires on
     an application that is already gone, writing a ``bgerror`` for each. It is

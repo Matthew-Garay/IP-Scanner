@@ -829,3 +829,69 @@ def wake_on_lan(mac: str) -> ToolResult:
     if not result.ok:
         result.error = result.output
     return result
+
+
+# ---------------------------------------------------------------------------
+# Windows shares
+# ---------------------------------------------------------------------------
+def parse_net_view(stdout: str) -> list[tuple[str, str, str]]:
+    """
+    Shares from ``net view \\\\host`` output, as (name, type, comment).
+
+    The output is localised ("Share name  Type  Used as  Comment" in English,
+    "Nombre de recurso compartido  Tipo ..." in Spanish) but always laid out
+    in fixed columns under a dashed rule, so the column starts are read from
+    the header line instead of matching words.
+    """
+    lines = stdout.splitlines()
+    try:
+        rule = next(i for i, line in enumerate(lines) if set(line.strip()) == {"-"}
+                    and len(line.strip()) > 20)
+    except StopIteration:
+        return []
+    # The header is the last non-blank line above the rule (Windows puts an
+    # empty line between them).
+    header = next((line for line in reversed(lines[:rule]) if line.strip()), "")
+    starts = [0] + [m.end() for m in re.finditer(r"\S\s{2,}(?=\S)", header)]
+    shares: list[tuple[str, str, str]] = []
+    for line in lines[rule + 1:]:
+        if not line.strip():
+            continue
+        # The closing "The command completed successfully." line has no
+        # column gaps; a real row always does.
+        if not re.search(r"\S\s{2,}\S", line):
+            break
+        cells = [line[a:b].strip() for a, b in zip(starts, starts[1:] + [len(line)])]
+        name = cells[0] if cells else ""
+        kind = cells[1] if len(cells) > 1 else ""
+        comment = cells[-1] if len(cells) > 3 else ""
+        if name:
+            shares.append((name, kind, comment))
+    return shares
+
+
+def list_shares(host: str) -> ToolResult:
+    """Folders and printers a Windows/SMB host shares (``net view``)."""
+    host = host.strip().lstrip("\\")
+    result = ToolResult(name=f"Shared folders: {host}")
+    if not host:
+        result.ok, result.error = False, "Empty target"
+        return result
+    code, stdout, stderr = _run(["net", "view", f"\\\\{host}"], timeout=20.0)
+    if code == 127:
+        result.ok, result.error = False, "net.exe is not available on this system"
+        return result
+    shares = parse_net_view(stdout)
+    result.data = shares
+    if code != 0 and not shares:
+        message = (stderr or stdout).strip().splitlines()
+        result.ok = False
+        result.error = (message[-1] if message else f"net view failed ({code})") + \
+            " — the host may not share anything, or needs credentials."
+        return result
+    result.lines = [f"{'SHARE':<24}{'TYPE':<10}COMMENT"]
+    result.lines += [f"{name:<24}{kind:<10}{comment}" for name, kind, comment in shares]
+    if not shares:
+        result.lines.append("(no shared folders)")
+    result.output = "\n".join(result.lines)
+    return result

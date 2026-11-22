@@ -95,8 +95,8 @@ class EventContract(WindowTestCase):
         )
         self.assertEqual(self.app._tree.row_count(), 2)
         self.assertFalse(self.app._scanning)
-        self.assertEqual(self.app._scan_btn.cget("state"), "normal")
-        self.assertEqual(self.app._stop_btn.cget("state"), "disabled")
+        self.assertEqual(str(self.app._scan_btn.cget("state")), "normal")
+        self.assertEqual(str(self.app._stop_btn.cget("state")), "disabled")
         self.assertIn("Finished", self.app._status_label.cget("text"))
 
     def test_stop_keeps_scan_disabled_until_the_worker_exits(self):
@@ -105,17 +105,17 @@ class EventContract(WindowTestCase):
         self.app._set_buttons(scanning=True)
         self.app._on_stop_click()
         self.assertTrue(self.app._stop_event.is_set())
-        self.assertEqual(self.app._scan_btn.cget("state"), "disabled")
+        self.assertEqual(str(self.app._scan_btn.cget("state")), "disabled")
         self._pump(ScannerEvent("Cancelled", "Scan stopped by user"),
                    ScannerEvent(ui.WORKER_DONE))
-        self.assertEqual(self.app._scan_btn.cget("state"), "normal")
+        self.assertEqual(str(self.app._scan_btn.cget("state")), "normal")
         self.assertIn("Stopped", self.app._status_label.cget("text"))
 
     def test_an_engine_crash_still_releases_the_buttons(self):
         self.app._scanning = True
         self.app._set_buttons(scanning=True)
         self.app._handle_event(ScannerEvent(ui.WORKER_DONE))
-        self.assertEqual(self.app._scan_btn.cget("state"), "normal")
+        self.assertEqual(str(self.app._scan_btn.cget("state")), "normal")
 
 
 class Table(WindowTestCase):
@@ -256,6 +256,82 @@ class Options(WindowTestCase):
         self.app._toggle_favorite("10.0.0.7")
         self.assertEqual(Settings.load().favorites, ["10.0.0.7"])
         self.assertEqual(self.app._favs_list.size(), 1)
+
+
+class NativeWindow(WindowTestCase):
+    """The window is plain Tk/ttk now: no customtkinter, native theme."""
+
+    def test_no_customtkinter_anywhere(self):
+        import sys as _sys
+        self.assertNotIn("customtkinter", _sys.modules)
+        self.assertIsInstance(self.app, __import__("tkinter").Tk)
+
+    def test_property_grid_shows_the_selected_device(self):
+        self._pump(ScannerEvent("Device", device=_device("10.0.0.5", "nas", (445,),
+                                                         vendor="Synology")))
+        self.app._tree.select("10.0.0.5")
+        self.app._on_device_selected("10.0.0.5")
+        self.assertEqual(self.app._detail.value_of("Manufacturer"), "Synology")
+        self.assertEqual(self.app._detail.value_of("IP address"), "10.0.0.5")
+
+    def test_properties_panel_can_be_hidden_and_restored(self):
+        self.app._toggle_detail()
+        self.assertNotIn(str(self.app._detail), self.app._paned.panes())
+        self.app._toggle_detail()
+        self.assertIn(str(self.app._detail), self.app._paned.panes())
+
+    def test_shares_appear_under_the_device(self):
+        self._pump(ScannerEvent("Device", device=_device("10.0.0.5", ports=(445,))))
+        self.app._show_shares("10.0.0.5", [("Public", "Disk", ""), ("Scans", "Disk", "")], "")
+        children = self.app._tree._tree.get_children("dev:10.0.0.5")
+        self.assertIn("share:10.0.0.5:Public", children)
+        self.assertEqual(sum(c.startswith("svc:") for c in children), 1)
+        # a later update of the device keeps its shares
+        self._pump(ScannerEvent("Device", device=_device("10.0.0.5", "nas", (445,))))
+        self.assertIn("share:10.0.0.5:Scans", self.app._tree._tree.get_children("dev:10.0.0.5"))
+
+    def test_copy_selected_rows_as_tab_separated_text(self):
+        self._pump(ScannerEvent("Device", device=_device("10.0.0.1", "a")),
+                   ScannerEvent("Device", device=_device("10.0.0.2", "b")))
+        self.app._select_all()
+        self.app._copy_selected()
+        lines = self.app.clipboard_get().splitlines()
+        self.assertEqual(len(lines), 3)
+        self.assertTrue(lines[0].startswith("Name\tIP"))
+        self.assertEqual(self.app._tree.get_selected_ips(), ["10.0.0.1", "10.0.0.2"])
+
+    def test_bulk_context_menu_for_several_devices(self):
+        self._pump(ScannerEvent("Device", device=_device("10.0.0.1")),
+                   ScannerEvent("Device", device=_device("10.0.0.2")))
+        menu = __import__("tkinter").Menu(self.app, tearoff=0)
+        self.app._fill_device_menu(menu, ["10.0.0.1", "10.0.0.2"])
+        labels = [menu.entrycget(i, "label") for i in range(menu.index("end") + 1)
+                  if menu.type(i) != "separator"]
+        self.assertIn("Rescan 2 devices", labels)
+        self.assertIn("Copy 2 rows", labels)
+
+    def test_single_device_menu_disables_what_does_not_apply(self):
+        self._pump(ScannerEvent("Device", device=_device("10.0.0.1", ports=(22,))))
+        menu = __import__("tkinter").Menu(self.app, tearoff=0)
+        self.app._fill_device_menu(menu, ["10.0.0.1"])
+        open_with = self.app.nametowidget(menu.entrycget("Open with", "menu"))
+        self.assertEqual(str(open_with.entrycget("SSH", "state")), "normal")
+        self.assertEqual(str(open_with.entrycget("Remote Desktop (RDP)", "state")), "disabled")
+
+    def test_saved_results_can_be_reopened(self):
+        from ip_inspector.actions.exporter import export_json
+        path = Path(self._tmp.name) / "results.json"
+        export_json([_device("10.0.0.8", "printer", (9100,))], path,
+                    {"range": "10.0.0.0/24"})
+        self.assertTrue(self.app.load_results(str(path)))
+        self.assertEqual(self.app._tree.visible_ips(), ["10.0.0.8"])
+        self.assertEqual(self.app._range_entry.get(), "10.0.0.0/24")
+
+    def test_range_history_is_remembered(self):
+        self.app._range_entry.set("10.9.0.0/24")
+        self.app._save_options()
+        self.assertEqual(Settings.load().range_history[0], "10.9.0.0/24")
+        self.assertIn("10.9.0.0/24", self.app._range_entry.cget("values"))
 
 
 @unittest.skipUnless(_GUI, "the interface needs tkinter")

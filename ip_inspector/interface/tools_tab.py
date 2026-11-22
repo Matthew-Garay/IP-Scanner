@@ -14,14 +14,14 @@ import time
 import tkinter as tk
 from dataclasses import dataclass, field
 from datetime import datetime
+from tkinter import filedialog, ttk
 from typing import Callable
-
-import customtkinter as ctk
 
 from ..core.models import ToolResult
 from ..nettools import tools
 from ..nettools.profiles import parse_ports
-from .widgets import MONO_FONT, c
+from . import theme
+from .widgets import scrolled
 
 
 @dataclass(frozen=True)
@@ -74,6 +74,9 @@ TOOLS: tuple[Tool, ...] = (
           Field("timeout", "Timeout (s)", "", "0.5", ("0.3", "0.5", "1", "2"))),
          lambda v: tools.port_check(v["host"], parse_ports(v["ports"]),
                                     float(v.get("timeout") or 0.5))),
+    Tool("Shared folders", "Connectivity", "Folders and printers a Windows host shares (SMB).",
+         (Field("host", "Host", "192.168.1.10"),),
+         lambda v: tools.list_shares(v["host"])),
     Tool("Wake-on-LAN", "Connectivity", "Send a magic packet to power on a machine.",
          (Field("mac", "MAC address", "AA:BB:CC:DD:EE:FF"),),
          lambda v: tools.wake_on_lan(v["mac"])),
@@ -136,90 +139,82 @@ def get_tool(name: str) -> Tool:
     raise KeyError(name)
 
 
-class ToolsTab(ctk.CTkFrame):
-    """Tool list on the left, form and console on the right."""
+class ToolsTab(ttk.Frame):
+    """Tool list on the left; form and console on the right."""
 
     POLL_MS = 120
 
     def __init__(self, master, on_status: Callable[[str], None] | None = None):
-        super().__init__(master, fg_color="transparent")
+        super().__init__(master)
         self._on_status = on_status or (lambda _text: None)
         self._results: queue.Queue = queue.Queue()
         self._running = False
         self._tool: Tool = TOOLS[0]
-        self._inputs: dict[str, ctk.CTkEntry | ctk.CTkOptionMenu] = {}
-        self._buttons: dict[str, ctk.CTkButton] = {}
+        self._inputs: dict[str, ttk.Entry | ttk.Combobox] = {}
         self._build()
         self.select_tool(TOOLS[0].name)
         self._job = self.after(self.POLL_MS, self._poll)
 
     # -- layout -------------------------------------------------------------- #
     def _build(self) -> None:
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+        paned = ttk.Panedwindow(self, orient="horizontal")
+        paned.pack(fill="both", expand=True)
 
-        sidebar = ctk.CTkScrollableFrame(self, width=190, fg_color=c("surface_alt"))
-        sidebar.grid(row=0, column=0, sticky="nsw", padx=(6, 8), pady=6)
-        category = ""
-        for tool in TOOLS:
-            if tool.category != category:
-                category = tool.category
-                ctk.CTkLabel(sidebar, text=category.upper(), anchor="w",
-                             font=("Segoe UI", 9, "bold"),
-                             text_color=c("text_muted")).pack(fill="x", padx=6, pady=(10, 2))
-            button = ctk.CTkButton(
-                sidebar, text=tool.name, anchor="w", height=28,
-                fg_color="transparent", hover_color=c("hover"),
-                text_color=c("text_primary"), font=("Segoe UI", 10),
-                command=lambda name=tool.name: self.select_tool(name),
-            )
-            button.pack(fill="x", padx=2, pady=1)
-            self._buttons[tool.name] = button
+        left, self._list = scrolled(paned, lambda parent: ttk.Treeview(
+            parent, show="tree", selectmode="browse"))
+        self._list.column("#0", width=theme.px(180))
+        for category in dict.fromkeys(tool.category for tool in TOOLS):
+            group = self._list.insert("", "end", text=category, open=True,
+                                      tags=("group",))
+            for tool in TOOLS:
+                if tool.category == category:
+                    self._list.insert(group, "end", iid=f"tool:{tool.name}", text=tool.name)
+        self._list.tag_configure("group", font=theme.UI_FONT_BOLD)
+        self._list.bind("<<TreeviewSelect>>", self._on_list_select)
+        paned.add(left, weight=0)
 
-        main = ctk.CTkFrame(self, fg_color="transparent")
-        main.grid(row=0, column=1, sticky="nsew", padx=(0, 6), pady=6)
-        main.grid_columnconfigure(0, weight=1)
-        main.grid_rowconfigure(3, weight=1)
+        main = ttk.Frame(paned, padding=(8, 2, 2, 2))
+        main.columnconfigure(0, weight=1)
+        main.rowconfigure(3, weight=1)
+        paned.add(main, weight=1)
 
-        self._title = ctk.CTkLabel(main, text="", anchor="w",
-                                   font=("Segoe UI", 15, "bold"),
-                                   text_color=c("text_primary"))
+        self._title = ttk.Label(main, style="Title.TLabel")
         self._title.grid(row=0, column=0, sticky="w")
-        self._description = ctk.CTkLabel(main, text="", anchor="w",
-                                         font=("Segoe UI", 10),
-                                         text_color=c("text_secondary"))
-        self._description.grid(row=1, column=0, sticky="w")
+        self._description = ttk.Label(main, style="Muted.TLabel")
+        self._description.grid(row=1, column=0, sticky="w", pady=(0, 6))
+        self._form = ttk.Frame(main)
+        self._form.grid(row=2, column=0, sticky="ew", pady=(0, 6))
 
-        self._form = ctk.CTkFrame(main, fg_color=c("surface_alt"), corner_radius=8)
-        self._form.grid(row=2, column=0, sticky="ew", pady=(8, 8))
-
-        console_frame = ctk.CTkFrame(main, fg_color="transparent")
-        console_frame.grid(row=3, column=0, sticky="nsew")
-        console_frame.grid_columnconfigure(0, weight=1)
-        console_frame.grid_rowconfigure(0, weight=1)
-        self._console = ctk.CTkTextbox(console_frame, font=MONO_FONT, wrap="none",
-                                       fg_color=c("surface"), text_color=c("text_primary"))
-        self._console.grid(row=0, column=0, sticky="nsew")
+        console, self._console = scrolled(main, lambda parent: tk.Text(
+            parent, font=theme.MONO_FONT, wrap="none", height=10, relief="solid",
+            borderwidth=1, background=theme.PALETTE.console_bg, padx=6, pady=4),
+            horizontal=True)
+        console.grid(row=3, column=0, sticky="nsew")
         self._console.configure(state="disabled")
 
-        bar = ctk.CTkFrame(console_frame, fg_color="transparent")
-        bar.grid(row=1, column=0, sticky="ew", pady=(6, 0))
-        flat = dict(height=28, width=90, fg_color="transparent", hover_color=c("hover"),
-                    text_color=c("text_primary"), border_width=1, border_color=c("border"),
-                    font=("Segoe UI", 10))
-        ctk.CTkButton(bar, text="Copy output", command=self._copy, **flat).pack(side="left")
-        ctk.CTkButton(bar, text="Save…", command=self._save, **flat).pack(side="left", padx=(6, 0))
-        ctk.CTkButton(bar, text="Clear", command=self.clear, **flat).pack(side="left", padx=6)
-        self._state_label = ctk.CTkLabel(bar, text="", font=("Segoe UI", 9),
-                                         text_color=c("text_muted"))
+        bar = ttk.Frame(main)
+        bar.grid(row=4, column=0, sticky="ew", pady=(6, 0))
+        ttk.Button(bar, text="Copy", command=self._copy).pack(side="left")
+        ttk.Button(bar, text="Save…", command=self._save).pack(side="left", padx=4)
+        ttk.Button(bar, text="Clear", command=self.clear).pack(side="left")
+        self._state_label = ttk.Label(bar, style="Muted.TLabel")
         self._state_label.pack(side="right")
+
+    def _on_list_select(self, _event) -> None:
+        selection = self._list.selection()
+        if selection and selection[0].startswith("tool:"):
+            name = selection[0].removeprefix("tool:")
+            if name != self._tool.name:
+                self.select_tool(name)
 
     def select_tool(self, name: str, values: dict[str, str] | None = None) -> None:
         """Show a tool's form, optionally pre-filled (used by the context menu)."""
         tool = get_tool(name)
         self._tool = tool
-        for tool_name, button in self._buttons.items():
-            button.configure(fg_color=c("selection") if tool_name == name else "transparent")
+        iid = f"tool:{name}"
+        if self._list.selection() != (iid,):
+            self._list.selection_set(iid)
+            self._list.see(iid)
         self._title.configure(text=tool.name)
         self._description.configure(text=tool.description)
 
@@ -228,33 +223,31 @@ class ToolsTab(ctk.CTkFrame):
         self._inputs.clear()
         column = 0
         for spec in tool.fields:
-            ctk.CTkLabel(self._form, text=spec.label + ":", font=("Segoe UI", 10, "bold"),
-                         text_color=c("text_secondary")).grid(
-                row=0, column=column, padx=(12, 4), pady=10)
+            ttk.Label(self._form, text=spec.label + ":").grid(
+                row=0, column=column, padx=(0 if column == 0 else 10, 4))
             preset = (values or {}).get(spec.key, spec.default)
             if spec.choices:
-                widget = ctk.CTkOptionMenu(self._form, values=list(spec.choices), width=110)
+                widget = ttk.Combobox(self._form, values=list(spec.choices), width=8,
+                                      state="readonly")
                 widget.set(preset or spec.choices[0])
             else:
-                widget = ctk.CTkEntry(self._form, placeholder_text=spec.placeholder,
-                                      width=240 if column == 0 else 170)
+                widget = ttk.Entry(self._form, width=32 if column == 0 else 22)
                 if preset:
                     widget.insert(0, preset)
                 widget.bind("<Return>", lambda _e: self.run())
-            widget.grid(row=0, column=column + 1, padx=(0, 8), pady=10)
+            widget.grid(row=0, column=column + 1)
             self._inputs[spec.key] = widget
             column += 2
-        self._run_btn = ctk.CTkButton(
-            self._form, text="▶  Run", width=100, height=30,
-            fg_color=c("accent"), hover_color=c("accent_hover"),
-            text_color=c("accent_text"), font=("Segoe UI", 10, "bold"),
-            command=self.run,
-        )
-        self._run_btn.grid(row=0, column=column, padx=12, pady=10)
+        self._run_btn = ttk.Button(self._form, text="Run", command=self.run, default="active")
+        self._run_btn.grid(row=0, column=column, padx=(12, 0))
         if self._running:
-            self._run_btn.configure(state="disabled")
+            self._run_btn.state(["disabled"])
+        if tool.fields and tool.fields[0].placeholder:
+            hint = ttk.Label(self._form, text=f"e.g. {tool.fields[0].placeholder}",
+                             style="Muted.TLabel")
+            hint.grid(row=1, column=1, sticky="w")
         first = next(iter(self._inputs.values()), None)
-        if isinstance(first, ctk.CTkEntry):
+        if isinstance(first, ttk.Entry) and not isinstance(first, ttk.Combobox):
             first.focus_set()
 
     def run_tool(self, name: str, values: dict[str, str]) -> None:
@@ -271,13 +264,13 @@ class ToolsTab(ctk.CTkFrame):
         if tool.needs_input and tool.fields:
             first = tool.fields[0]
             if not values.get(first.key):
-                self._write(f"! {tool.name}: enter a value for '{first.label}'.\n\n")
+                self._write(f"{tool.name}: enter a value for '{first.label}'.\n\n")
                 return
         self._running = True
-        self._run_btn.configure(state="disabled", text="Running…")
+        self._run_btn.state(["disabled"])
         self._state_label.configure(text=f"Running {tool.name}…")
         self._on_status(f"Running {tool.name}…")
-        summary = ", ".join(v for v in values.values() if v)
+        summary = "  ".join(v for v in values.values() if v)
         self._write(f"[{datetime.now():%H:%M:%S}] {tool.name}"
                     f"{'  ' + summary if summary else ''}\n")
         threading.Thread(target=self._worker, args=(tool, values),
@@ -312,15 +305,18 @@ class ToolsTab(ctk.CTkFrame):
 
     def _show(self, tool: Tool, result: ToolResult, elapsed: float) -> None:
         self._running = False
-        self._run_btn.configure(state="normal", text="▶  Run")
+        try:
+            self._run_btn.state(["!disabled"])
+        except tk.TclError:
+            pass
         body = result.output or "\n".join(result.lines)
         if body:
             self._write(body.rstrip() + "\n")
         if not result.ok or result.error:
-            self._write(f"! {result.error or 'The tool reported a failure'}\n")
-        self._write(f"— finished in {elapsed:.1f} s\n\n")
-        self._state_label.configure(text=f"{tool.name}: done in {elapsed:.1f} s")
-        self._on_status(f"{tool.name} finished in {elapsed:.1f} s")
+            self._write(f"Error: {result.error or 'the tool reported a failure'}\n")
+        self._write(f"Completed in {elapsed:.1f} s\n\n")
+        self._state_label.configure(text=f"{tool.name}: completed in {elapsed:.1f} s")
+        self._on_status(f"{tool.name} completed in {elapsed:.1f} s")
 
     # -- console ------------------------------------------------------------- #
     def _write(self, text: str) -> None:
@@ -337,13 +333,16 @@ class ToolsTab(ctk.CTkFrame):
         self._console.delete("1.0", "end")
         self._console.configure(state="disabled")
 
+    def _copy(self) -> None:
+        self.clipboard_clear()
+        self.clipboard_append(self.console_text())
+        self._state_label.configure(text="Output copied to the clipboard")
+
     def _save(self) -> None:
         text = self.console_text()
         if not text:
             self._state_label.configure(text="Nothing to save yet")
             return
-        from tkinter import filedialog
-
         path = filedialog.asksaveasfilename(
             title="Save tool output", defaultextension=".txt",
             filetypes=[("Text", "*.txt"), ("Log", "*.log")],
@@ -358,11 +357,6 @@ class ToolsTab(ctk.CTkFrame):
             self._state_label.configure(text=f"Could not save: {exc}")
             return
         self._state_label.configure(text=f"Saved to {path}")
-
-    def _copy(self) -> None:
-        self.clipboard_clear()
-        self.clipboard_append(self.console_text())
-        self._state_label.configure(text="Output copied to the clipboard")
 
     @property
     def running(self) -> bool:

@@ -66,3 +66,47 @@ def wake_device(device) -> tuple[bool, str]:
     if sent < 1:
         return False, "The broadcast could not be sent from this adapter"
     return True, device.mac_address
+
+def open_ftp(ip: str) -> bool:
+    """Open an ftp:// URL (Explorer or the default FTP client)."""
+    try:
+        return webbrowser.open(f"ftp://{ip}/")
+    except webbrowser.Error:
+        return False
+
+
+#: shutdown.exe switches for each remote power action.
+POWER_ACTIONS: dict[str, list[str]] = {
+    "shutdown": ["/s"],
+    "restart": ["/r"],
+    "abort": ["/a"],
+}
+
+
+def remote_power(ip: str, action: str, delay: int = 30,
+                 message: str = "Scheduled from IP Inspector") -> tuple[bool, str]:
+    """
+    Shut down, restart, or cancel a pending shutdown of a Windows computer.
+
+    Uses the built-in ``shutdown.exe /m \\host``; the target only accepts it
+    from an account with administrator rights on it (and with remote
+    shutdown allowed by its firewall). Returns ``(ok, message)``.
+    """
+    if sys.platform != "win32":
+        return False, "Remote shutdown uses shutdown.exe and is only available on Windows"
+    if action not in POWER_ACTIONS:
+        return False, f"Unknown action: {action}"
+    command = ["shutdown", *POWER_ACTIONS[action], "/m", f"\\{ip}"]
+    if action != "abort":
+        command += ["/t", str(max(0, int(delay))), "/c", message[:500], "/d", "p:0:0"]
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=30,
+                                   creationflags=_NO_WINDOW)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)
+    output = (completed.stderr or completed.stdout or "").strip()
+    if completed.returncode != 0:
+        return False, output or f"shutdown.exe failed with code {completed.returncode}"
+    verb = {"shutdown": "Shutdown", "restart": "Restart", "abort": "Cancel"}[action]
+    when = "" if action == "abort" else f" in {delay} s"
+    return True, f"{verb} sent to {ip}{when}"

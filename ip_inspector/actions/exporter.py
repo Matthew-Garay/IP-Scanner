@@ -122,3 +122,62 @@ def export(devices: Iterable[Device], path: str | Path, extra: dict | None = Non
     if target.suffix.lower() == ".csv":
         return export_csv(devices, target)
     return export_json(devices, target, extra)
+
+
+def device_from_dict(data: dict) -> Device:
+    """Rebuild a Device from :func:`device_to_dict` output (inverse function)."""
+    from ..core.models import Port, SecurityFinding
+
+    device = Device(
+        ip_address=str(data["ip"]),
+        mac_address=data.get("mac"),
+        hostname=data.get("hostname") or "",
+        vendor=data.get("vendor") or "",
+        model=data.get("model") or "",
+        os_name=data.get("os") or "",
+        device_type=data.get("type") or "Unknown",
+        is_alive=bool(data.get("alive", True)),
+        is_vpn_active=bool(data.get("vpn", False)),
+        ttl=data.get("ttl"),
+        tcp_window=data.get("tcp_window"),
+        response_time_ms=data.get("latency_ms"),
+        discovery_method=data.get("discovery") or "",
+        risk_score=int(data.get("risk_score") or 0),
+    )
+    device.open_ports = [
+        Port(int(p["number"]), p.get("state", "open"), p.get("service") or "",
+             banner=p.get("banner") or "", version=p.get("version") or "",
+             latency_ms=p.get("latency_ms"))
+        for p in data.get("ports", [])
+    ]
+    device.findings = [
+        SecurityFinding(f.get("severity", "info"), f.get("title", ""),
+                        f.get("detail", ""), f.get("target", ""))
+        for f in data.get("findings", [])
+    ]
+    return device
+
+
+def load_json(path: str | Path) -> tuple[list[Device], dict]:
+    """
+    Read a file written by :func:`export_json`.
+
+    Returns the devices and the session block (range, profile…). Raises
+    ``ValueError`` with a readable message when the file is not an export.
+    """
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError) as exc:
+        raise ValueError(f"Cannot read {path}: {exc}") from None
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{Path(path).name} is not valid JSON ({exc.msg}, line {exc.lineno})") \
+            from None
+    if not isinstance(payload, dict) or not isinstance(payload.get("devices"), list):
+        raise ValueError(f"{Path(path).name} is not an IP Inspector results file")
+    try:
+        devices = [device_from_dict(item) for item in payload["devices"]]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"{Path(path).name} has an invalid device entry: {exc}") from None
+    session = payload.get("session") if isinstance(payload.get("session"), dict) else {}
+    session.setdefault("generated", payload.get("generated", ""))
+    return devices, session

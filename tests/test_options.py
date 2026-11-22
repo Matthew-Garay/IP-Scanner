@@ -109,6 +109,61 @@ class ToolsCatalogue(unittest.TestCase):
             self.tools_tab.get_tool("Port check").run({"host": "127.0.0.1", "ports": "x"})
 
 
+class SharesAndPower(unittest.TestCase):
+
+    SPANISH = (
+        "Recursos compartidos en \\\\192.168.1.74\n\nEquipo3\n\n"
+        "Nombre de recurso compartido  Tipo   Usado como  Comentario     \n\n"
+        "-------------------------------------------------------------------------------\n"
+        "ADMIN$                        Disco              Remote Admin   \n"
+        "Public Files                  Disco                             \n"
+        "IPC$                          IPC                Remote IPC     \n"
+        "Se ha completado el comando correctamente.\n"
+    )
+    ENGLISH = (
+        "Shared resources at \\\\NAS\n\n\n\n"
+        "Share name  Type  Used as  Comment\n\n"
+        "-------------------------------------------------------------------------------\n"
+        "media       Disk           Movies and music\n"
+        "printer     Print          Office laser\n"
+        "The command completed successfully.\n"
+    )
+
+    def test_net_view_is_parsed_in_any_language(self):
+        from ip_inspector.nettools.tools import parse_net_view
+        self.assertEqual(parse_net_view(self.SPANISH), [
+            ("ADMIN$", "Disco", "Remote Admin"), ("Public Files", "Disco", ""),
+            ("IPC$", "IPC", "Remote IPC")])
+        self.assertEqual(parse_net_view(self.ENGLISH), [
+            ("media", "Disk", "Movies and music"), ("printer", "Print", "Office laser")])
+
+    def test_net_view_without_shares(self):
+        from ip_inspector.nettools.tools import parse_net_view
+        self.assertEqual(parse_net_view("System error 53 has occurred.\n"), [])
+
+    def test_remote_power_rejects_unknown_actions(self):
+        from ip_inspector.actions.menu import remote_power
+        ok, message = remote_power("10.0.0.1", "explode")
+        self.assertFalse(ok)
+
+    def test_saved_json_round_trips(self):
+        from ip_inspector.actions.exporter import device_to_dict, export_json, load_json
+        from ip_inspector.core.models import Device, Port, SecurityFinding
+        device = Device(ip_address="10.0.0.1", mac_address="aa:bb:cc:dd:ee:ff",
+                        hostname="x", open_ports=[Port(80, "open", "HTTP", banner="b")],
+                        risk_score=12)
+        device.findings = [SecurityFinding("high", "t", "d", "10.0.0.1")]
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "r.json"
+            export_json([device], path, {"range": "10.0.0.0/24"})
+            loaded, session = load_json(path)
+            self.assertEqual(device_to_dict(loaded[0]), device_to_dict(device))
+            self.assertEqual(session["range"], "10.0.0.0/24")
+            path.write_text('{"something": 1}', encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_json(path)
+
+
 class BannerCleaning(unittest.TestCase):
 
     def test_binary_greeting_becomes_readable_text(self):

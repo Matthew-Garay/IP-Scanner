@@ -39,6 +39,18 @@ class Settings:
     last_scan_range: str = ""
     #: Minutes between automatic rescans; 0 disables them.
     auto_rescan: int = 0
+    #: Most recent ranges typed in the address box, newest first.
+    range_history: list[str] = field(default_factory=list)
+    #: Window "WxH+X+Y" and state, restored at start-up.
+    window_geometry: str = ""
+    window_zoomed: bool = False
+    show_properties: bool = True
+
+    def remember_range(self, target: str, limit: int = 12) -> None:
+        target = target.strip()
+        if target:
+            self.range_history = [target] + [r for r in self.range_history if r != target]
+            del self.range_history[limit:]
 
     @classmethod
     def load(cls, path: Path | None = None) -> "Settings":

@@ -4,7 +4,8 @@ Windows desktop app that scans the local network: discovers devices, checks
 open ports, identifies model and operating system, scores security exposure,
 and bundles network diagnostics and a host monitor. The whole UI is English.
 
-Production dependencies: `customtkinter`, `scapy`, `psutil`, `mac-vendor-lookup`.
+Production dependencies: `scapy`, `psutil`, `mac-vendor-lookup`. The GUI is
+Tkinter/ttk from the standard library.
 
 ## Layout
 
@@ -36,7 +37,11 @@ Each layer imports only from the layers above it in this list:
 - Python 3.10+ (3.13 recommended), `from __future__ import annotations`.
 - Pure data in `core/models.py`; the engine never imports tkinter.
 - All source files are UTF-8; pass `encoding="utf-8"` to `open()`/`write_text`.
-- `customtkinter` is the only GUI library; do not add third-party dependencies.
+- The GUI uses Tkinter/ttk only, with the native theme (`theme.setup_style`).
+  Do not add GUI libraries: native controls are what make it look like a
+  real Windows utility. Never name an attribute `_options`, `_w`, `tk` or
+  another `tkinter.Misc` internal on the window: `self._options` once broke
+  the clipboard.
 - Tools return a `ToolResult` and never raise.
 - User-visible text is English.
 
@@ -84,8 +89,10 @@ touch the user's preferences.
   live in `ui.py`; all key devices with `widgets.device_key`.
 - New-device detection keys on MAC (IP when no MAC). The first scan only
   builds the baseline; *Settings › Forget known devices* resets it.
-- CustomTkinter colours are `(light, dark)` pairs from `widgets.c()`; native
-  widgets (Treeview, Listbox) are restyled in `IPInspectorApp._style_native`.
+- Treeview column widths and row heights are pixels: always pass them
+  through `theme.px()` so they scale with the screen DPI.
+- Icons are drawn in `theme.Icons` (no image files); the window icon is
+  `assets/icon.png` and the .exe icon `assets/icon.ico`.
 - Adding a tool: function in `nettools/tools.py` + one `Tool` entry in
   `interface/tools_tab.TOOLS`. Adding a profile: one `ScanProfile` in
   `nettools/profiles.PROFILES`.
