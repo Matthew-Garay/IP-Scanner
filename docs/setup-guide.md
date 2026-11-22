@@ -1,6 +1,6 @@
-# Setup Guide - IP Inspector
+# Setup Guide - IP Scanner
 
-This guide helps you install and run IP Inspector locally.
+This guide helps you install and run IP Scanner locally.
 
 ## Prerequisites
 
@@ -30,7 +30,7 @@ This guide helps you install and run IP Inspector locally.
 
 4. Run the application (ideally from an administrator terminal):
    ```powershell
-   python -m ip_inspector.main
+   python -m ip_scanner.main
    ```
 
 ## First scan
@@ -53,8 +53,8 @@ python -m unittest discover -s tests -t . -v
 
 ```powershell
 pip install pyinstaller
-pyinstaller IP_Inspector.spec
-# Output: dist\IP_Inspector.exe
+pyinstaller IP_Scanner.spec
+# Output: dist\IP_Scanner.exe
 ```
 
 ## Troubleshooting

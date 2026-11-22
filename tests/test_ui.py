@@ -14,13 +14,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ip_inspector.core.models import Device, Port, ScannerEvent
+from ip_scanner.core.models import Device, Port, ScannerEvent
 
 try:
-    from ip_inspector.interface import settings as settings_module
-    from ip_inspector.interface import ui
-    from ip_inspector.interface.settings import Settings
-    from ip_inspector.interface.widgets import COL_PORTS
+    from ip_scanner.interface import settings as settings_module
+    from ip_scanner.interface import ui
+    from ip_scanner.interface.settings import Settings
+    from ip_scanner.interface.widgets import COL_PORTS
     _GUI = True
 except Exception:  # pragma: no cover - no tkinter, no interface
     _GUI = False
@@ -42,7 +42,7 @@ class WindowTestCase(unittest.TestCase):
         self._saved_path = settings_module.SETTINGS_FILE
         settings_module.SETTINGS_FILE = Path(self._tmp.name) / "settings.json"
         try:
-            self.app = ui.IPInspectorApp(settings=Settings(last_range="10.0.0.0/24"))
+            self.app = ui.ScannerApp(settings=Settings(last_range="10.0.0.0/24"))
         except Exception as exc:  # pragma: no cover - CI without a display
             settings_module.SETTINGS_FILE = self._saved_path
             self._tmp.cleanup()
@@ -76,7 +76,7 @@ class EventContract(WindowTestCase):
     def test_phases_match_the_engine(self):
         """The constants must be the strings core/network.py emits."""
         import inspect
-        from ip_inspector.core import network
+        from ip_scanner.core import network
         source = inspect.getsource(network)
         for phase in (ui.PHASE_DEVICE, ui.PHASE_FINISHED, ui.PHASE_CANCELLED,
                       ui.PHASE_ERROR, *ui.PROGRESS_PHASES):
@@ -97,7 +97,7 @@ class EventContract(WindowTestCase):
         self.assertFalse(self.app._scanning)
         self.assertEqual(str(self.app._scan_btn.cget("state")), "normal")
         self.assertEqual(str(self.app._stop_btn.cget("state")), "disabled")
-        self.assertIn("Finished", self.app._status_label.cget("text"))
+        self.assertIn("Scan finished", self.app._status_label.cget("text"))
 
     def test_stop_keeps_scan_disabled_until_the_worker_exits(self):
         """Stop used to re-enable Scan while the old scan was still running."""
@@ -109,7 +109,7 @@ class EventContract(WindowTestCase):
         self._pump(ScannerEvent("Cancelled", "Scan stopped by user"),
                    ScannerEvent(ui.WORKER_DONE))
         self.assertEqual(str(self.app._scan_btn.cget("state")), "normal")
-        self.assertIn("Stopped", self.app._status_label.cget("text"))
+        self.assertIn("Scan stopped", self.app._status_label.cget("text"))
 
     def test_an_engine_crash_still_releases_the_buttons(self):
         self.app._scanning = True
@@ -181,7 +181,7 @@ class Changes(WindowTestCase):
         self.app._devices.clear()
         self._finish(_device("10.0.0.1", mac="AA:00:00:00:00:01"))
         self.assertEqual([g["ip"] for g in self.app._gone], ["10.0.0.2"])
-        self.assertIn("1 gone", self.app._summary_label.cget("text"))
+        self.assertIn("1 no longer answering", self.app._summary_label.cget("text"))
 
     def test_a_different_range_is_not_compared(self):
         self.app._last_range = "10.0.0.0/24"
@@ -255,7 +255,7 @@ class Options(WindowTestCase):
         self._pump(ScannerEvent("Device", device=_device("10.0.0.7")))
         self.app._toggle_favorite("10.0.0.7")
         self.assertEqual(Settings.load().favorites, ["10.0.0.7"])
-        self.assertEqual(self.app._favs_list.size(), 1)
+        self.assertEqual(len(self.app._favs_list.get_children()), 1)
 
 
 class NativeWindow(WindowTestCase):
@@ -319,7 +319,7 @@ class NativeWindow(WindowTestCase):
         self.assertEqual(str(open_with.entrycget("Remote Desktop (RDP)", "state")), "disabled")
 
     def test_saved_results_can_be_reopened(self):
-        from ip_inspector.actions.exporter import export_json
+        from ip_scanner.actions.exporter import export_json
         path = Path(self._tmp.name) / "results.json"
         export_json([_device("10.0.0.8", "printer", (9100,))], path,
                     {"range": "10.0.0.0/24"})

@@ -1,4 +1,4 @@
-# IP Inspector Network and Port Scanner
+# IP Scanner Network and Port Scanner
 
 ## About
 

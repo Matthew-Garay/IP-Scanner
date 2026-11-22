@@ -1,0 +1,785 @@
+{
+  "generated": "2026-11-22T00:53:13",
+  "device_count": 17,
+  "devices": [
+    {
+      "ip": "192.168.50.1",
+      "mac": "50:91:E3:4A:10:01",
+      "hostname": "",
+      "vendor": "TP-Link",
+      "model": "Archer AX55",
+      "os": "Linux/Unix",
+      "type": "Router",
+      "category": "router",
+      "details": {
+        "Role": "Default gateway",
+        "UPnP device": "InternetGatewayDevice, WANDevice"
+      },
+      "alive": true,
+      "vpn": false,
+      "ttl": 64,
+      "tcp_window": null,
+      "latency_ms": 1.0,
+      "discovery": "ARP",
+      "risk_score": 0,
+      "ports": [
+        {
+          "number": 53,
+          "state": "open",
+          "service": "DNS",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 80,
+          "state": "open",
+          "service": "HTTP",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 443,
+          "state": "open",
+          "service": "HTTPS",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        }
+      ],
+      "findings": []
+    },
+    {
+      "ip": "192.168.50.10",
+      "mac": "B0:7B:25:3C:21:0A",
+      "hostname": "FRONT-DESK-PC",
+      "vendor": "Dell Inc.",
+      "model": "OptiPlex 7010",
+      "os": "Windows",
+      "type": "Windows PC",
+      "category": "computer",
+      "details": {},
+      "alive": true,
+      "vpn": false,
+      "ttl": 128,
+      "tcp_window": null,
+      "latency_ms": 8.0,
+      "discovery": "ARP",
+      "risk_score": 74,
+      "ports": [
+        {
+          "number": 135,
+          "state": "open",
+          "service": "MSRPC",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 139,
+          "state": "open",
+          "service": "NetBIOS",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 445,
+          "state": "open",
+          "service": "SMB",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 3389,
+          "state": "open",
+          "service": "RDP",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        }
+      ],
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "SMB and RDP open together",
+          "detail": "A stolen credential gets file access over SMB first and an interactive session over RDP second, which is a complete remote takeover.",
+          "target": "192.168.50.10"
+        },
+        {
+          "severity": "high",
+          "title": "Port 445 open (host)",
+          "detail": "SMB exposed: EternalBlue attack surface",
+          "target": "192.168.50.10"
+        },
+        {
+          "severity": "high",
+          "title": "SMB with legacy NetBIOS",
+          "detail": "SMB is served together with the legacy NetBIOS session service, which keeps the old attack surface alive.",
+          "target": "192.168.50.10"
+        },
+        {
+          "severity": "medium",
+          "title": "Port 139 open (host)",
+          "detail": "Port 139 is listening.",
+          "target": "192.168.50.10"
+        },
+        {
+          "severity": "medium",
+          "title": "Port 3389 open (host)",
+          "detail": "RDP exposed: brute-force target",
+          "target": "192.168.50.10"
+        }
+      ]
+    },
+    {
+      "ip": "192.168.50.11",
+      "mac": "8C:16:45:7E:02:11",
+      "hostname": "ACCOUNTING-LT",
+      "vendor": "Lenovo",
+      "model": "ThinkPad T14",
+      "os": "Windows",
+      "type": "Windows PC",
+      "category": "laptop",
+      "details": {},
+      "alive": true,
+      "vpn": false,
+      "ttl": 128,
+      "tcp_window": null,
+      "latency_ms": 15.0,
+      "discovery": "ARP",
+      "risk_score": 15,
+      "ports": [
+        {
+          "number": 135,
+          "state": "open",
+          "service": "MSRPC",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 445,
+          "state": "open",
+          "service": "SMB",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        }
+      ],
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Port 445 open (host)",
+          "detail": "SMB exposed: EternalBlue attack surface",
+          "target": "192.168.50.11"
+        }
+      ]
+    },
+    {
+      "ip": "192.168.50.12",
+      "mac": "F0:18:98:6D:33:12",
+      "hostname": "design-mac",
+      "vendor": "Apple, Inc.",
+      "model": "iMac 24",
+      "os": "macOS",
+      "type": "Apple Device",
+      "category": "computer",
+      "details": {
+        "Announced services": "File sharing (SMB), SSH"
+      },
+      "alive": true,
+      "vpn": false,
+      "ttl": 64,
+      "tcp_window": null,
+      "latency_ms": 22.0,
+      "discovery": "ARP",
+      "risk_score": 29,
+      "ports": [
+        {
+          "number": 22,
+          "state": "open",
+          "service": "SSH",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 445,
+          "state": "open",
+          "service": "SMB",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 5900,
+          "state": "open",
+          "service": "VNC",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        }
+      ],
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Port 445 open (host)",
+          "detail": "SMB exposed: EternalBlue attack surface",
+          "target": "192.168.50.12"
+        },
+        {
+          "severity": "medium",
+          "title": "Port 22 open (host)",
+          "detail": "Port 22 is listening.",
+          "target": "192.168.50.12"
+        },
+        {
+          "severity": "medium",
+          "title": "Port 5900 open (host)",
+          "detail": "VNC: suele usar contrasenas cortas",
+          "target": "192.168.50.12"
+        }
+      ]
+    },
+    {
+      "ip": "192.168.50.20",
+      "mac": "00:11:32:9A:4C:20",
+      "hostname": "nas-01",
+      "vendor": "Synology Incorporated",
+      "model": "DiskStation DS920+",
+      "os": "Linux/Unix",
+      "type": "Linux Server",
+      "category": "storage",
+      "details": {
+        "UPnP device": "Basic"
+      },
+      "alive": true,
+      "vpn": false,
+      "ttl": 64,
+      "tcp_window": null,
+      "latency_ms": 6.0,
+      "discovery": "ARP",
+      "risk_score": 22,
+      "ports": [
+        {
+          "number": 22,
+          "state": "open",
+          "service": "SSH",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 80,
+          "state": "open",
+          "service": "HTTP",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 443,
+          "state": "open",
+          "service": "HTTPS",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 445,
+          "state": "open",
+          "service": "SMB",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 5000,
+          "state": "open",
+          "service": "UPnP",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 5001,
+          "state": "open",
+          "service": "",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        }
+      ],
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Port 445 open (host)",
+          "detail": "SMB exposed: EternalBlue attack surface",
+          "target": "192.168.50.20"
+        },
+        {
+          "severity": "medium",
+          "title": "Port 22 open (host)",
+          "detail": "Port 22 is listening.",
+          "target": "192.168.50.20"
+        }
+      ]
+    },
+    {
+      "ip": "192.168.50.30",
+      "mac": "9C:7B:EF:12:55:30",
+      "hostname": "Office printer",
+      "vendor": "HP Inc.",
+      "model": "LaserJet Pro M404dn",
+      "os": "",
+      "type": "Printer",
+      "category": "printer",
+      "details": {
+        "Announced services": "IPP printing, Raw printing, eSCL scanning"
+      },
+      "alive": true,
+      "vpn": false,
+      "ttl": 64,
+      "tcp_window": null,
+      "latency_ms": 13.0,
+      "discovery": "ARP",
+      "risk_score": 0,
+      "ports": [
+        {
+          "number": 80,
+          "state": "open",
+          "service": "HTTP",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 443,
+          "state": "open",
+          "service": "HTTPS",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 631,
+          "state": "open",
+          "service": "IPP",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 9100,
+          "state": "open",
+          "service": "Raw-Print",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        }
+      ],
+      "findings": []
+    },
+    {
+      "ip": "192.168.50.40",
+      "mac": "44:19:B6:20:8F:40",
+      "hostname": "Lobby camera",
+      "vendor": "Hikvision",
+      "model": "DS-2CD2143G2-I",
+      "os": "Linux/Unix",
+      "type": "IP Camera",
+      "category": "camera",
+      "details": {},
+      "alive": true,
+      "vpn": false,
+      "ttl": 64,
+      "tcp_window": null,
+      "latency_ms": 20.0,
+      "discovery": "ARP",
+      "risk_score": 0,
+      "ports": [
+        {
+          "number": 80,
+          "state": "open",
+          "service": "HTTP",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 554,
+          "state": "open",
+          "service": "",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 8000,
+          "state": "open",
+          "service": "",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        }
+      ],
+      "findings": []
+    },
+    {
+      "ip": "192.168.50.50",
+      "mac": "A8:23:FE:51:0C:50",
+      "hostname": "Meeting room TV",
+      "vendor": "LG Electronics",
+      "model": "OLED55C1",
+      "os": "",
+      "type": "Unknown",
+      "category": "tv",
+      "details": {
+        "UPnP device": "MediaRenderer, dial"
+      },
+      "alive": true,
+      "vpn": false,
+      "ttl": 64,
+      "tcp_window": null,
+      "latency_ms": 4.0,
+      "discovery": "ARP",
+      "risk_score": 0,
+      "ports": [
+        {
+          "number": 1900,
+          "state": "open",
+          "service": "",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 3000,
+          "state": "open",
+          "service": "",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        }
+      ],
+      "findings": []
+    },
+    {
+      "ip": "192.168.50.51",
+      "mac": "5C:AA:FD:61:7B:51",
+      "hostname": "Reception speaker",
+      "vendor": "Sonos, Inc.",
+      "model": "Sonos One",
+      "os": "",
+      "type": "Unknown",
+      "category": "speaker",
+      "details": {
+        "Announced services": "AirPlay audio, Sonos"
+      },
+      "alive": true,
+      "vpn": false,
+      "ttl": 64,
+      "tcp_window": null,
+      "latency_ms": 11.0,
+      "discovery": "ARP",
+      "risk_score": 0,
+      "ports": [
+        {
+          "number": 1400,
+          "state": "open",
+          "service": "",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        }
+      ],
+      "findings": []
+    },
+    {
+      "ip": "192.168.50.60",
+      "mac": "3C:22:FB:0E:71:60",
+      "hostname": "Ana's iPhone",
+      "vendor": "Apple, Inc.",
+      "model": "iPhone 15",
+      "os": "",
+      "type": "Unknown",
+      "category": "phone",
+      "details": {
+        "Announced services": "Apple device"
+      },
+      "alive": true,
+      "vpn": false,
+      "ttl": 64,
+      "tcp_window": null,
+      "latency_ms": 18.0,
+      "discovery": "ARP",
+      "risk_score": 0,
+      "ports": [],
+      "findings": []
+    },
+    {
+      "ip": "192.168.50.61",
+      "mac": "DA:4F:11:92:3E:61",
+      "hostname": "",
+      "vendor": "",
+      "model": "",
+      "os": "Linux/Unix",
+      "type": "Unknown",
+      "category": "phone",
+      "details": {
+        "MAC address type": "Randomized (private address)"
+      },
+      "alive": true,
+      "vpn": false,
+      "ttl": 64,
+      "tcp_window": null,
+      "latency_ms": 2.0,
+      "discovery": "ARP",
+      "risk_score": 0,
+      "ports": [],
+      "findings": []
+    },
+    {
+      "ip": "192.168.50.70",
+      "mac": "28:6A:BA:44:19:70",
+      "hostname": "Kiosk-iPad",
+      "vendor": "Apple, Inc.",
+      "model": "iPad (10th gen)",
+      "os": "",
+      "type": "Unknown",
+      "category": "tablet",
+      "details": {},
+      "alive": true,
+      "vpn": false,
+      "ttl": 64,
+      "tcp_window": null,
+      "latency_ms": 9.0,
+      "discovery": "ARP",
+      "risk_score": 0,
+      "ports": [],
+      "findings": []
+    },
+    {
+      "ip": "192.168.50.80",
+      "mac": "EC:B5:FA:2D:6E:80",
+      "hostname": "Hue Bridge",
+      "vendor": "Signify Netherlands",
+      "model": "BSB002",
+      "os": "",
+      "type": "IoT Device",
+      "category": "smart_home",
+      "details": {
+        "Announced services": "HomeKit accessory"
+      },
+      "alive": true,
+      "vpn": false,
+      "ttl": 64,
+      "tcp_window": null,
+      "latency_ms": 16.0,
+      "discovery": "ARP",
+      "risk_score": 0,
+      "ports": [
+        {
+          "number": 80,
+          "state": "open",
+          "service": "HTTP",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 443,
+          "state": "open",
+          "service": "HTTPS",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        }
+      ],
+      "findings": []
+    },
+    {
+      "ip": "192.168.50.90",
+      "mac": "F4:F5:D8:0B:52:90",
+      "hostname": "Lobby display",
+      "vendor": "Google, Inc.",
+      "model": "Chromecast",
+      "os": "",
+      "type": "Unknown",
+      "category": "media",
+      "details": {
+        "Announced services": "Chromecast / Google Cast"
+      },
+      "alive": true,
+      "vpn": false,
+      "ttl": 64,
+      "tcp_window": null,
+      "latency_ms": 23.0,
+      "discovery": "ARP",
+      "risk_score": 0,
+      "ports": [
+        {
+          "number": 8008,
+          "state": "open",
+          "service": "",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 8009,
+          "state": "open",
+          "service": "",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        }
+      ],
+      "findings": []
+    },
+    {
+      "ip": "192.168.50.100",
+      "mac": "AC:1F:6B:7C:3A:64",
+      "hostname": "build-server",
+      "vendor": "Super Micro Computer",
+      "model": "",
+      "os": "Linux/Unix",
+      "type": "Linux Server",
+      "category": "server",
+      "details": {},
+      "alive": true,
+      "vpn": false,
+      "ttl": 64,
+      "tcp_window": null,
+      "latency_ms": 7.0,
+      "discovery": "ARP",
+      "risk_score": 52,
+      "ports": [
+        {
+          "number": 22,
+          "state": "open",
+          "service": "SSH",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 80,
+          "state": "open",
+          "service": "HTTP",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 3306,
+          "state": "open",
+          "service": "MySQL",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        },
+        {
+          "number": 6379,
+          "state": "open",
+          "service": "Redis",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        }
+      ],
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "Port 6379 open (host)",
+          "detail": "Redis without TLS: RCE on old versions",
+          "target": "192.168.50.100"
+        },
+        {
+          "severity": "high",
+          "title": "Port 3306 open (host)",
+          "detail": "MySQL reachable from the network",
+          "target": "192.168.50.100"
+        },
+        {
+          "severity": "medium",
+          "title": "Port 22 open (host)",
+          "detail": "Port 22 is listening.",
+          "target": "192.168.50.100"
+        }
+      ]
+    },
+    {
+      "ip": "192.168.50.120",
+      "mac": "00:D9:D1:5E:14:78",
+      "hostname": "Break room PS5",
+      "vendor": "Sony Interactive Entertainment",
+      "model": "PS5",
+      "os": "",
+      "type": "Unknown",
+      "category": "console",
+      "details": {},
+      "alive": true,
+      "vpn": false,
+      "ttl": 64,
+      "tcp_window": null,
+      "latency_ms": 14.0,
+      "discovery": "ARP",
+      "risk_score": 0,
+      "ports": [],
+      "findings": []
+    },
+    {
+      "ip": "192.168.50.200",
+      "mac": "74:83:C2:31:9B:C8",
+      "hostname": "ap-floor-2",
+      "vendor": "Ubiquiti Inc",
+      "model": "U6-Lite",
+      "os": "Linux/Unix",
+      "type": "Network Device",
+      "category": "access_point",
+      "details": {
+        "UPnP device": "WLANAccessPointDevice"
+      },
+      "alive": true,
+      "vpn": false,
+      "ttl": 64,
+      "tcp_window": null,
+      "latency_ms": 21.0,
+      "discovery": "ARP",
+      "risk_score": 22,
+      "ports": [
+        {
+          "number": 22,
+          "state": "open",
+          "service": "SSH",
+          "version": "",
+          "banner": "",
+          "latency_ms": null
+        }
+      ],
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Remote administration on a network device",
+          "detail": "Ports 22 accept remote sessions.",
+          "target": "192.168.50.200"
+        },
+        {
+          "severity": "medium",
+          "title": "Port 22 open (host)",
+          "detail": "Port 22 is listening.",
+          "target": "192.168.50.200"
+        }
+      ]
+    }
+  ],
+  "session": {
+    "range": "192.168.50.0/24",
+    "profile": "standard",
+    "note": "Fictional sample network for demos and screenshots"
+  }
+}

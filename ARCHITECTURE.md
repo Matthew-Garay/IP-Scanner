@@ -1,23 +1,26 @@
-# IP Inspector Architecture
+# IP Scanner Architecture
 
-IP Inspector is a desktop network scanner for Windows with a Tkinter/ttk
+IP Scanner is a desktop network scanner for Windows with a Tkinter/ttk
 interface that uses the native Windows controls (the `vista` ttk theme). It runs fully offline and never sends data to any server.
 
 ## Layers
 
 ```
-ip_inspector/
+ip_scanner/
   core/        Domain models and the scanning engine (no UI, usable headless)
+               discovery.py: SSDP/UPnP and mDNS listening; devicetype.py: categories
   analysis/    What the findings mean: exposure, risk score, TLS/HTTP audit, reports
   actions/     Things you can do to a device: export, open RDP/web, Wake-on-LAN
   nettools/    Diagnostics (tools.py), continuous monitor, scan profiles
   interface/   Everything that touches tkinter
   i18n.py      Text catalogue (device types, findings); the app runs in English
-  main.py      Development entry point (python -m ip_inspector.main)
+  main.py      Development entry point (python -m ip_scanner.main)
   cli.py       Command-line scanner (headless: no tkinter import)
-  __main__.py  python -m ip_inspector: the window, or the CLI when given arguments
+  __main__.py  python -m ip_scanner: the window, or the CLI when given arguments
   launcher.py  PyInstaller entry point
 tests/         Regression tests (standard library only)
+tools/         Design-time scripts: make_icons.py (icon set, needs Pillow),
+               make_sample.py (docs/sample-results.json)
 ```
 
 Each layer may only import from the layers listed above it
@@ -29,7 +32,8 @@ imports `interface`, which is what lets the engine run without a display.
 1. The Scanner tab turns the range, profile and options into a
    `ScanRequest` (`nettools/profiles.py: ScanProfile.to_request`).
 2. A worker thread runs `NetworkScanner.scan()` (`core/network.py`):
-   ARP sweep (or the OS ARP cache when not elevated) → reachability probe →
+   ARP sweep (or the OS ARP cache when not elevated) and, in parallel, SSDP/mDNS
+   listening (`core/discovery.py`) → reachability probe →
    vendor and hostname enrichment → threaded TCP port scan → OS fingerprint
    and classification → model identification.
 3. Every step posts a `ScannerEvent` on a `queue.Queue`. The phases are
@@ -48,11 +52,11 @@ never drift apart again (that mismatch once kept every result off screen).
 | Module | Responsibility |
 |--------|----------------|
 | `interface/ui.py` | Main window, menu bar, Scanner and Favorites tabs, scan lifecycle, context menu |
-| `interface/widgets.py` | `DeviceTree` (results grid with services and shared folders), `PropertyPanel`, ttk helpers |
+| `interface/widgets.py` | `DeviceTree` (results grid), `AddressMap`, `DetailsPanel`, `ViewStack` (navigation rail) |
 | `interface/tools_tab.py` | Tools tab; every tool is one entry in the `TOOLS` table |
 | `interface/monitor_tab.py` | Monitor tab on top of `nettools/monitor.py` |
-| `interface/settings.py` | Preferences, favorites and known devices in `~/.ip_inspector/settings.json` |
-| `interface/theme.py` | Native ttk style, DPI scaling (`px`) and the small icons, drawn in code |
+| `interface/settings.py` | Preferences, favorites and known devices in `~/.ip_scanner/settings.json` |
+| `interface/theme.py` | Colour tokens, flat ttk styles on `clam`, DPI scaling (`px`) and the icon loader |
 
 ## Adding a tool
 
@@ -82,3 +86,27 @@ name survives a DHCP address change.
 Add a `ScanProfile` to `nettools/profiles.py` and list it in `PROFILES`. The
 profile menu, the options row and the request builder pick it up
 automatically.
+
+## Device categories
+
+`core/devicetype.categorize()` decides what a device is, using evidence in
+order of trust:
+
+1. this computer / the default gateway;
+2. what the device announced: UPnP device types and mDNS services;
+3. its announced model or friendly name;
+4. its host name;
+5. ports that name a single job (printing, RTSP, Cast);
+6. its MAC vendor, a randomized (private) MAC, then the engine fingerprint.
+
+Each category key matches an icon in `assets/icons/<key>_<size>.png`.
+`tests/test_devicetype.py` checks every category has one.
+
+## Visual design
+
+One accent colour (teal `#0B6E79`) for the primary action, the current
+view, selection and the address map; neutral white and light-grey surfaces
+with hairline borders; Segoe UI with weight, not size, carrying hierarchy.
+Status colours (green, blue for new, orange, red) appear only on the row
+badges and the map. Icons are outline glyphs on a 64-unit grid drawn by
+`tools/make_icons.py`.

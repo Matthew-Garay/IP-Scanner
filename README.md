@@ -1,8 +1,10 @@
-﻿# IP Inspector Network and Port Scanner
+# IP Scanner Network and Port Scanner
+
+![Devices view showing a sample office network](docs/screenshots/devices.png)
 
 ## A. Project Title and Executive Summary
 
-IP Inspector is a Windows desktop application that scans the local network, discovers connected devices, checks open TCP ports, identifies each device's model and operating system, and audits its security posture. It also bundles everyday network diagnostics (ping, traceroute, DNS, WHOIS, TLS, subnet maths…) and a continuous host monitor. The problem it solves is giving visibility over the devices on a local network without installing complex tools or running a server. Its technological scope is local execution on Windows with Python 3.10+, with no data sent to external servers.
+IP Scanner is a Windows desktop application that scans the local network, discovers connected devices, works out what each one is (computer, phone, printer, camera, TV, router...), checks open TCP ports, identifies models and operating systems, and audits each device's security posture. It also bundles everyday network diagnostics (ping, traceroute, DNS, WHOIS, TLS, subnet maths…) and a continuous host monitor. The problem it solves is giving visibility over the devices on a local network without installing complex tools or running a server. Its technological scope is local execution on Windows with Python 3.10+, with no data sent to external servers.
 
 ## B. System Architecture
 
@@ -11,9 +13,11 @@ The program follows a layered architecture where each layer only imports from th
 ## C. Key Technical Features
 
 - **Network scan:** host discovery (ARP sweep, ICMP and TCP probes) plus TCP port scanning, including VPN subnets.
+- **Device identification:** listens to what devices announce about themselves over **SSDP/UPnP** (friendly name, manufacturer, exact model) and **mDNS/DNS-SD** (published services such as AirPlay, Google Cast or IPP printing), combines it with NetBIOS/DNS names, MAC vendors, randomized-MAC detection, open ports and the OS fingerprint, and sorts every host into one of 18 categories, each with its own icon: computer, laptop, server, router, access point, phone, tablet, printer, camera, TV, media player, speaker, game console, network storage, smart home, network device, this computer and unknown.
+- **Address map:** a strip with one cell per address of the range, filled where a device answered and coloured by status; click a cell to jump to the device.
 - **Scan profiles:** Quick, Standard (top ~100 ports), Full (1-1024), IoT / Cameras, Ping sweep only, and Custom port lists such as `22,80,443,8000-8100`.
 - **Scan options:** network adapter selector, timeout, thread count, hostname resolution and model identification toggles.
-- **Results:** native Windows grid (sortable, multi-select, Ctrl+C copies rows for Excel) where each device expands to its services and **shared folders**, plus a property panel with risk score and security findings.
+- **Results:** sortable, multi-select grid (Ctrl+C copies rows for Excel) where each device expands to its services and **shared folders**, plus a details panel with everything known about the device, what it announced, its services and its security findings.
 - **Change detection:** devices never seen before are flagged **NEW**, devices that stopped answering are listed as **gone** (Ctrl+D), and an optional **auto-rescan** (every 5-60 min) alerts you when something changes.
 - **Your own names:** give any device a custom name and a note (F2); they follow its MAC address even when its IP changes. Favorites (★) are remembered between sessions.
 - **Command line:** scan without the window and export to CSV/JSON, e.g. for scheduled tasks (see below).
@@ -22,7 +26,7 @@ The program follows a layered architecture where each layer only imports from th
 - **Monitor tab:** continuous reachability checks with latency, uptime, loss statistics, an event log and an alert sound when a host goes down.
 - **Files:** save results as CSV or JSON, **reopen saved JSON results** later (File › Open results), and HTML / PDF security reports.
 - Remembers window size and position, recent address ranges and options; keyboard shortcuts for every main action.
-- No persistent database and no network protocol of its own beyond local scanning; preferences live in `~/.ip_inspector/settings.json`.
+- No persistent database and no network protocol of its own beyond local scanning; preferences live in `~/.ip_scanner/settings.json`.
 - Responsible use: the tool probes other machines and must only be used with permission.
 
 ## D. Technology Stack Specification
@@ -30,7 +34,7 @@ The program follows a layered architecture where each layer only imports from th
 | Category | Technology / Library |
 |----------|----------------------|
 | Language | Python 3.10+ (3.13 recommended) |
-| GUI | Tkinter / ttk (standard library, native Windows theme) |
+| GUI | Tkinter / ttk (standard library) with a custom flat theme and drawn icons |
 | Networking | scapy, psutil, mac-vendor-lookup |
 | Packaging | PyInstaller |
 | Operating system | Windows |
@@ -60,21 +64,27 @@ This project needs no .env file or environment variables.
 ### Running in development
 
 ```powershell
-python -m ip_inspector.main
+python -m ip_scanner.main
 ```
+
+### Try it without scanning
+
+Open `docs/sample-results.json` with **File › Open results** to explore the interface with a fictional small-office network.
+
+![Tools view](docs/screenshots/tools.png)
 
 ### Command-line mode
 
 ```powershell
-python -m ip_inspector 192.168.1.0/24 -p quick          # scan and print a table
-python -m ip_inspector 10.0.0.1-50 --ports 22,80,443,8000-8100
-python -m ip_inspector -o results.csv -o results.json   # local network, save both
-python -m ip_inspector 192.168.1.0/24 --fail-on-risk 40 # exit code 3 if a host is risky
-python -m ip_inspector --list-profiles
-python -m ip_inspector --help
+python -m ip_scanner 192.168.1.0/24 -p quick          # scan and print a table
+python -m ip_scanner 10.0.0.1-50 --ports 22,80,443,8000-8100
+python -m ip_scanner -o results.csv -o results.json   # local network, save both
+python -m ip_scanner 192.168.1.0/24 --fail-on-risk 40 # exit code 3 if a host is risky
+python -m ip_scanner --list-profiles
+python -m ip_scanner --help
 ```
 
-Without arguments, `python -m ip_inspector` opens the window.
+Without arguments, `python -m ip_scanner` opens the window.
 
 ### Keyboard shortcuts
 
@@ -99,7 +109,7 @@ python -m unittest discover -s tests -t . -v
 
 ```powershell
 pip install pyinstaller
-pyinstaller IP_Inspector.spec   # -> dist\IP_Inspector.exe
+pyinstaller IP_Scanner.spec   # -> dist\IP_Scanner.exe
 ```
 
 ## F. Authorship Credits

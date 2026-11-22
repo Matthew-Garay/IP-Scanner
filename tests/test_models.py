@@ -3,8 +3,8 @@
 import re
 import unittest
 
-from ip_inspector.core.identify import IDENTITY_PORTS
-from ip_inspector.core.models import Device, Port, SecurityFinding
+from ip_scanner.core.identify import IDENTITY_PORTS
+from ip_scanner.core.models import Device, Port, SecurityFinding
 
 
 class DeviceModel(unittest.TestCase):
@@ -107,7 +107,7 @@ class PortsColumn(unittest.TestCase):
 
     def test_the_ports_column_is_wide_enough(self):
         try:
-            from ip_inspector.interface.widgets import COL_PORTS, TREE_COLUMNS
+            from ip_scanner.interface.widgets import COL_PORTS, TREE_COLUMNS
         except Exception as exc:  # pragma: no cover - no tkinter
             self.skipTest("no interface: %s" % exc)
         self.assertGreaterEqual(TREE_COLUMNS[COL_PORTS][1], 180)

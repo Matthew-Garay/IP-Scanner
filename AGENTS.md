@@ -1,4 +1,4 @@
-# IP Inspector — notes for contributors and coding agents
+# IP Scanner — notes for contributors and coding agents
 
 Windows desktop app that scans the local network: discovers devices, checks
 open ports, identifies model and operating system, scores security exposure,
@@ -10,11 +10,11 @@ Tkinter/ttk from the standard library.
 ## Layout
 
 ```
-IP_Inspector.spec      PyInstaller spec (relative paths): pyinstaller IP_Inspector.spec
+IP_Scanner.spec      PyInstaller spec (relative paths): pyinstaller IP_Scanner.spec
 requirements.txt
 README.md / ABOUT.md / ARCHITECTURE.md / AGENTS.md
 docs/setup-guide.md
-ip_inspector/
+ip_scanner/
   core/        models, utils, ping, hostnames, identify, network (NetworkScanner)
   analysis/    audit (TLS/HTTP), exposure (risk heuristics), report (HTML/PDF)
   actions/     exporter (CSV/JSON), menu (web/RDP/WoL), wol
@@ -37,9 +37,11 @@ Each layer imports only from the layers above it in this list:
 - Python 3.10+ (3.13 recommended), `from __future__ import annotations`.
 - Pure data in `core/models.py`; the engine never imports tkinter.
 - All source files are UTF-8; pass `encoding="utf-8"` to `open()`/`write_text`.
-- The GUI uses Tkinter/ttk only, with the native theme (`theme.setup_style`).
-  Do not add GUI libraries: native controls are what make it look like a
-  real Windows utility. Never name an attribute `_options`, `_w`, `tk` or
+- The GUI uses Tkinter/ttk only, styled in `theme.setup_style` (flat styles on
+  `clam`). Do not add GUI libraries. Use the colour tokens in `theme.PALETTE`;
+  the teal accent is reserved for the primary action, selection and the map.
+- Never set fonts through `option_add("*Font")`: it overrides every ttk
+  style. Fonts belong in the ttk styles. Never name an attribute `_options`, `_w`, `tk` or
   another `tkinter.Misc` internal on the window: `self._options` once broke
   the clipboard.
 - Tools return a `ToolResult` and never raise.
@@ -57,8 +59,8 @@ touch the user's preferences.
 
 ## Commands
 
-- Run: `python -m ip_inspector.main` (run as administrator for the full ARP sweep).
-- Build: `pyinstaller IP_Inspector.spec` → `dist/IP_Inspector.exe`.
+- Run: `python -m ip_scanner.main` (run as administrator for the full ARP sweep).
+- Build: `pyinstaller IP_Scanner.spec` → `dist/IP_Scanner.exe`.
 - The spec points at `launcher.py`, not `main.py`, because PyInstaller does
   not resolve the relative imports of `main.py`. New modules must be added to
   `hiddenimports` in the spec.
@@ -91,8 +93,12 @@ touch the user's preferences.
   builds the baseline; *Settings › Forget known devices* resets it.
 - Treeview column widths and row heights are pixels: always pass them
   through `theme.px()` so they scale with the screen DPI.
-- Icons are drawn in `theme.Icons` (no image files); the window icon is
-  `assets/icon.png` and the .exe icon `assets/icon.ico`.
+- Icons are PNGs drawn by `tools/make_icons.py` (Pillow, design time only)
+  into `assets/icons`; `theme.Icons` loads them and composites the status
+  badge. A new device category needs a glyph there and a key in
+  `core/devicetype.CATEGORY_NAMES`.
+- README screenshots use `docs/sample-results.json` (fictional data from
+  `tools/make_sample.py`). Never commit screenshots of a real network.
 - Adding a tool: function in `nettools/tools.py` + one `Tool` entry in
   `interface/tools_tab.TOOLS`. Adding a profile: one `ScanProfile` in
   `nettools/profiles.PROFILES`.

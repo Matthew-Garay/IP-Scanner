@@ -8,8 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ip_inspector.nettools import profiles
-from ip_inspector.nettools.profiles import PROFILES, get_profile, parse_ports
+from ip_scanner.nettools import profiles
+from ip_scanner.nettools.profiles import PROFILES, get_profile, parse_ports
 
 
 class PortParsing(unittest.TestCase):
@@ -59,7 +59,7 @@ class SettingsFile(unittest.TestCase):
 
     def test_round_trip_and_bad_files(self):
         try:
-            from ip_inspector.interface.settings import Settings
+            from ip_scanner.interface.settings import Settings
         except Exception as exc:  # pragma: no cover - no tkinter
             self.skipTest(str(exc))
         with tempfile.TemporaryDirectory() as folder:
@@ -79,7 +79,7 @@ class ToolsCatalogue(unittest.TestCase):
 
     def setUp(self):
         try:
-            from ip_inspector.interface import tools_tab
+            from ip_scanner.interface import tools_tab
         except Exception as exc:  # pragma: no cover - no tkinter
             self.skipTest(str(exc))
         self.tools_tab = tools_tab
@@ -130,7 +130,7 @@ class SharesAndPower(unittest.TestCase):
     )
 
     def test_net_view_is_parsed_in_any_language(self):
-        from ip_inspector.nettools.tools import parse_net_view
+        from ip_scanner.nettools.tools import parse_net_view
         self.assertEqual(parse_net_view(self.SPANISH), [
             ("ADMIN$", "Disco", "Remote Admin"), ("Public Files", "Disco", ""),
             ("IPC$", "IPC", "Remote IPC")])
@@ -138,17 +138,17 @@ class SharesAndPower(unittest.TestCase):
             ("media", "Disk", "Movies and music"), ("printer", "Print", "Office laser")])
 
     def test_net_view_without_shares(self):
-        from ip_inspector.nettools.tools import parse_net_view
+        from ip_scanner.nettools.tools import parse_net_view
         self.assertEqual(parse_net_view("System error 53 has occurred.\n"), [])
 
     def test_remote_power_rejects_unknown_actions(self):
-        from ip_inspector.actions.menu import remote_power
+        from ip_scanner.actions.menu import remote_power
         ok, message = remote_power("10.0.0.1", "explode")
         self.assertFalse(ok)
 
     def test_saved_json_round_trips(self):
-        from ip_inspector.actions.exporter import device_to_dict, export_json, load_json
-        from ip_inspector.core.models import Device, Port, SecurityFinding
+        from ip_scanner.actions.exporter import device_to_dict, export_json, load_json
+        from ip_scanner.core.models import Device, Port, SecurityFinding
         device = Device(ip_address="10.0.0.1", mac_address="aa:bb:cc:dd:ee:ff",
                         hostname="x", open_ports=[Port(80, "open", "HTTP", banner="b")],
                         risk_score=12)
@@ -171,7 +171,7 @@ class BannerCleaning(unittest.TestCase):
         import socket
         import threading
 
-        from ip_inspector.core.network import NetworkScanner
+        from ip_scanner.core.network import NetworkScanner
 
         server = socket.socket()
         server.bind(("127.0.0.1", 0))

@@ -13,9 +13,9 @@ import threading
 import unittest
 from pathlib import Path
 
-from ip_inspector import cli
-from ip_inspector.core.models import Device, Port, ScannerEvent, ScanRequest
-from ip_inspector.core.network import NetworkScanner
+from ip_scanner import cli
+from ip_scanner.core.models import Device, Port, ScannerEvent, ScanRequest
+from ip_scanner.core.network import NetworkScanner
 
 
 class FakeScanner:

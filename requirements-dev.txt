@@ -1,0 +1,5 @@
+# Development only: tests run on the standard library; Pillow redraws the icons.
+-r requirements.txt
+pillow>=10.0
+pyinstaller>=6.0
+pyflakes>=3.0

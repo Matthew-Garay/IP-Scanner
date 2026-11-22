@@ -4,10 +4,10 @@ import inspect
 import ipaddress
 import unittest
 
-from ip_inspector.core import network
-from ip_inspector.core.models import SCAN_PORTS, ScanRequest
-from ip_inspector.core.network import NetworkScanner
-from ip_inspector.core.utils import (
+from ip_scanner.core import network
+from ip_scanner.core.models import SCAN_PORTS, ScanRequest
+from ip_scanner.core.network import NetworkScanner
+from ip_scanner.core.utils import (
     MAX_TARGETS,
     _is_sweepable,
     clamp_to_sweep,
