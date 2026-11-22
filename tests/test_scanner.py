@@ -1,4 +1,4 @@
-"""Regresiones del motor: concurrencia del escaner de puertos y rango VPN."""
+"""Engine regressions: port scanner concurrency and VPN ranges."""
 
 import inspect
 import ipaddress
@@ -18,54 +18,54 @@ from ip_inspector.core.utils import (
 
 class PortScanConcurrency(unittest.TestCase):
     """
-    El escaner creaba una tarea por host y cada una recorria sus puertos en
-    serie. Un solo worker solo puede sostener un permiso del semaforo, asi que
-    la concurrencia era decorativa: un host gastaba un timeout completo por
-    puerto cerrado. Con 1024 puertos eran ~20 minutos por maquina.
+    The scanner used to create one task per host, each walking its ports in
+    series. A single worker can only hold one semaphore permit, so the
+    concurrency was decorative: a host spent a full timeout per closed port.
+    With 1024 ports that was ~20 minutes per machine.
 
-    La segunda version usaba asyncio con una tarea por par, lo que duplicaba el
-    tiempo: ``connect`` libera el GIL, asi que un pool de hilos rinde el doble
-    que el bucle de eventos para esta carga. Medido aqui: 481 sondas/s con
-    asyncio frente a 4485 con hilos.
+    The second version used asyncio with one task per pair, which doubled the
+    time: ``connect`` releases the GIL, so a thread pool beats the event loop
+    for this load. Measured here: 481 probes/s with asyncio versus 4485 with
+    threads.
     """
 
-    def test_una_sonda_por_par_host_puerto(self):
-        fuente = inspect.getsource(NetworkScanner._scan_ports_threaded)
-        # La forma que hacia todo en serie era iterar puertos DENTRO de un
-        # worker por host; ahora la iteracion encola un par por trabajo.
-        self.assertIn("for port in request.ports", fuente)
-        self.assertNotIn("for port_number in request.ports", fuente)
+    def test_one_probe_per_host_port_pair(self):
+        source = inspect.getsource(NetworkScanner._scan_ports_threaded)
+        # The serial version iterated ports INSIDE a per-host worker; now the
+        # iteration queues one pair per job.
+        self.assertIn("for port in request.ports", source)
+        self.assertNotIn("for port_number in request.ports", source)
 
-    def test_usa_hilos_y_no_asyncio(self):
-        fuente = inspect.getsource(NetworkScanner._scan_ports_threaded)
-        self.assertIn("ThreadPoolExecutor", fuente)
-        self.assertNotIn("asyncio", fuente)
+    def test_uses_threads_not_asyncio(self):
+        source = inspect.getsource(NetworkScanner._scan_ports_threaded)
+        self.assertIn("ThreadPoolExecutor", source)
+        self.assertNotIn("asyncio", source)
 
-    def test_el_progreso_no_inunda_la_cola(self):
-        """Un evento por puerto inundaria la cola que consume la interfaz."""
-        fuente = inspect.getsource(NetworkScanner._scan_ports_threaded)
-        self.assertIn("completed % 100", fuente)
+    def test_progress_does_not_flood_the_queue(self):
+        """One event per port would flood the queue the interface drains."""
+        source = inspect.getsource(NetworkScanner._scan_ports_threaded)
+        self.assertIn("completed % 100", source)
 
-    def test_el_tope_no_supera_las_sondas_reales(self):
-        """Abrir 2000 hilos para 300 sondas desperdicia memoria sin ganar nada."""
-        fuente = inspect.getsource(NetworkScanner._scan_ports_threaded)
-        self.assertIn("min(request.concurrency, total)", fuente)
+    def test_worker_cap_never_exceeds_the_real_probes(self):
+        """Opening 2000 threads for 300 probes wastes memory for nothing."""
+        source = inspect.getsource(NetworkScanner._scan_ports_threaded)
+        self.assertIn("min(request.concurrency, total)", source)
 
-    def test_los_valores_por_defecto_son_los_rapidos(self):
-        """Regresion: 1.0s y 500 sondas eran la configuracion lenta."""
+    def test_defaults_are_the_fast_ones(self):
+        """Regression: 1.0 s and 500 probes was the slow configuration."""
         request = ScanRequest(target_range="10.0.0.0/24")
         self.assertLessEqual(request.port_timeout, 0.5)
         self.assertGreaterEqual(request.concurrency, 2000)
 
 
 class ScanPorts(unittest.TestCase):
-    """El rango de puertos barrido por defecto."""
+    """The port range swept by default."""
 
-    def test_rango_completo(self):
+    def test_full_range(self):
         self.assertEqual(len(SCAN_PORTS), 1024)
         self.assertEqual((SCAN_PORTS[0], SCAN_PORTS[-1]), (1, 1024))
 
-    def test_scan_request_usa_el_rango_completo(self):
+    def test_scan_request_uses_the_full_range(self):
         request = ScanRequest(target_range="10.0.0.0/24")
         self.assertEqual(len(request.ports), 1024)
         self.assertTrue(request.scan_ports_enabled)
@@ -73,49 +73,49 @@ class ScanPorts(unittest.TestCase):
 
 class VpnSweeping(unittest.TestCase):
     """
-    El filtro exigia RFC 1918, asi que una VPN de rango publico (este equipo
-    anuncia 26.0.0.0/8) se descartaba entera: elegir el adaptador VPN seguia
-    barriendo la LAN de detras.
+    The filter required RFC 1918, so a VPN with a public range (this machine
+    advertises 26.0.0.0/8) was dropped entirely: picking the VPN adapter
+    still swept the LAN behind it.
     """
 
-    def test_vpn_publica_es_barrible(self):
+    def test_public_vpn_is_sweepable(self):
         self.assertTrue(_is_sweepable(ipaddress.ip_network("26.0.0.0/8")))
         self.assertTrue(_is_sweepable(ipaddress.ip_network("100.64.0.0/10")))
 
-    def test_lo_que_no_debe_barrerse(self):
+    def test_what_must_not_be_swept(self):
         self.assertFalse(_is_sweepable(ipaddress.ip_network("169.254.0.0/16")))
         self.assertFalse(_is_sweepable(ipaddress.ip_network("127.0.0.0/8")))
 
-    def test_un_slash_ocho_se_acota(self):
-        """Un /8 son 16 millones de direcciones: no se puede barragear."""
-        acotado = ipaddress.ip_network(
+    def test_a_slash_eight_is_clamped(self):
+        """A /8 is 16 million addresses: it cannot be swept."""
+        clamped = ipaddress.ip_network(
             clamp_to_sweep(ipaddress.ip_network("26.0.0.0/8")))
-        self.assertLessEqual(acotado.num_addresses, MAX_TARGETS)
-        self.assertGreater(acotado.num_addresses, 1)
+        self.assertLessEqual(clamped.num_addresses, MAX_TARGETS)
+        self.assertGreater(clamped.num_addresses, 1)
 
-    def test_un_rango_normal_no_se_toca(self):
+    def test_a_normal_range_is_untouched(self):
         lan = ipaddress.ip_network("192.168.30.0/23")
         self.assertEqual(clamp_to_sweep(lan), str(lan))
 
-    def test_el_planificador_acepta_la_vpn(self):
+    def test_the_planner_accepts_the_vpn(self):
         plan = plan_targets(clamp_to_sweep(ipaddress.ip_network("26.0.0.0/8")))
         self.assertFalse(plan.is_empty)
 
-    def test_el_escaneo_no_exige_rfc1918(self):
-        fuente = inspect.getsource(NetworkScanner._scannable_networks)
-        self.assertNotIn("is_private", fuente)
+    def test_scanning_does_not_require_rfc1918(self):
+        source = inspect.getsource(NetworkScanner._scannable_networks)
+        self.assertNotIn("is_private", source)
 
-    def test_la_deteccion_de_vpn_no_revienta(self):
-        self.assertFalse(is_ip_in_virtual_subnet("no-es-una-ip"))
+    def test_vpn_detection_does_not_crash(self):
+        self.assertFalse(is_ip_in_virtual_subnet("not-an-ip"))
 
 
-class AbsorbeArpTrasSondeo(unittest.TestCase):
+class AbsorbArpAfterProbe(unittest.TestCase):
     """
-    La instantanea ARP se tomaba ANTES del sondeo de alcance, pero es el
-    sondeo justamente lo que hace que el sistema resuelva cada host a una MAC.
-    Esas resoluciones llegan a la tabla de vecinos despues de la foto, asi que
-    los hosts que el escaner tocaba por primera vez descartaban su MAC y la
-    columna salia en blanco pese a que el sistema ya la conocia.
+    The ARP snapshot was taken BEFORE the reachability probe, but the probe
+    is exactly what makes the system resolve each host to a MAC. Those
+    resolutions reach the neighbour table after the snapshot, so hosts the
+    scanner touched for the first time lost their MAC and the column came out
+    blank even though the system already knew it.
     """
 
     def setUp(self):
@@ -131,75 +131,75 @@ class AbsorbeArpTrasSondeo(unittest.TestCase):
         network.is_elevated = self.originals["is_elevated"]
         network.supports_layer2 = self.originals["supports_layer2"]
 
-    def _sin_capa2(self, cache):
+    def _without_layer2(self, cache):
         network.is_elevated = lambda: False
         network.supports_layer2 = lambda: False
         network.read_arp_cache = lambda: dict(cache)
 
-    def test_recupera_la_mac_que_enseno_el_sondeo(self):
-        # El host estaba en la foto vacia, pero el sondeo lo resolvio.
-        self._sin_capa2({"192.168.30.7": "aa:bb:cc:dd:ee:01"})
-        tabla: dict[str, str] = {}
-        alcanzables = {"192.168.30.7": (1.0, None)}
+    def test_recovers_the_mac_the_probe_taught(self):
+        # The host was missing from the snapshot, but the probe resolved it.
+        self._without_layer2({"192.168.30.7": "aa:bb:cc:dd:ee:01"})
+        table: dict[str, str] = {}
+        reachable = {"192.168.30.7": (1.0, None)}
 
-        NetworkScanner._absorb_arp_after_probe(self.scanner, tabla, alcanzables)
+        NetworkScanner._absorb_arp_after_probe(self.scanner, table, reachable)
 
-        self.assertEqual(tabla.get("192.168.30.7"), "aa:bb:cc:dd:ee:01")
+        self.assertEqual(table.get("192.168.30.7"), "aa:bb:cc:dd:ee:01")
 
-    def test_no_pisa_una_mac_ya_conocida(self):
-        self._sin_capa2({"192.168.30.7": "aa:bb:cc:dd:ee:01"})
-        tabla = {"192.168.30.7": "11:22:33:44:55:66"}
-
-        NetworkScanner._absorb_arp_after_probe(
-            self.scanner, tabla, {"192.168.30.7": (1.0, None)})
-
-        self.assertEqual(tabla["192.168.30.7"], "11:22:33:44:55:66")
-
-    def test_sin_entrada_sigue_sin_mac(self):
-        # Un host inalcanzable para ARP se queda sin MAC; eso es correcto.
-        self._sin_capa2({})
-        tabla: dict[str, str] = {}
+    def test_does_not_overwrite_a_known_mac(self):
+        self._without_layer2({"192.168.30.7": "aa:bb:cc:dd:ee:01"})
+        table = {"192.168.30.7": "11:22:33:44:55:66"}
 
         NetworkScanner._absorb_arp_after_probe(
-            self.scanner, tabla, {"192.168.30.7": (1.0, None)})
+            self.scanner, table, {"192.168.30.7": (1.0, None)})
 
-        self.assertEqual(tabla, {})
+        self.assertEqual(table["192.168.30.7"], "11:22:33:44:55:66")
 
-    def test_con_capa2_no_relee_la_tabla(self):
-        # Con L2 el barrido ARP ya contesto por todos: releer no aportaria nada.
+    def test_no_entry_stays_without_mac(self):
+        # A host ARP cannot reach keeps no MAC; that is correct.
+        self._without_layer2({})
+        table: dict[str, str] = {}
+
+        NetworkScanner._absorb_arp_after_probe(
+            self.scanner, table, {"192.168.30.7": (1.0, None)})
+
+        self.assertEqual(table, {})
+
+    def test_with_layer2_the_table_is_not_reread(self):
+        # With layer 2 the ARP sweep already answered for everyone.
         network.is_elevated = lambda: True
         network.supports_layer2 = lambda: True
-        llamadas = []
+        calls = []
 
         def cache():
-            llamadas.append(1)
+            calls.append(1)
             return {"192.168.30.7": "aa:bb:cc:dd:ee:01"}
 
         network.read_arp_cache = cache
-        tabla: dict[str, str] = {}
+        table: dict[str, str] = {}
 
         NetworkScanner._absorb_arp_after_probe(
-            self.scanner, tabla, {"192.168.30.7": (1.0, None)})
+            self.scanner, table, {"192.168.30.7": (1.0, None)})
 
-        self.assertEqual(tabla, {})
-        self.assertEqual(llamadas, [])
+        self.assertEqual(table, {})
+        self.assertEqual(calls, [])
 
-    def test_una_sola_lectura_de_la_tabla(self):
-        """ releer por cada host reenumeraria todas las interfaces 200 veces."""
-        self._sin_capa2({})
-        llamadas = []
+    def test_the_table_is_read_once(self):
+        """Re-reading per host would enumerate every interface 200 times."""
+        self._without_layer2({})
+        calls = []
 
         def cache():
-            llamadas.append(1)
+            calls.append(1)
             return {}
 
         network.read_arp_cache = cache
-        alcanzables = {"192.168.30.%d" % n: (1.0, None) for n in range(2, 60)}
+        reachable = {"192.168.30.%d" % n: (1.0, None) for n in range(2, 60)}
 
         NetworkScanner._absorb_arp_after_probe(
-            self.scanner, {}, alcanzables)
+            self.scanner, {}, reachable)
 
-        self.assertEqual(len(llamadas), 1)
+        self.assertEqual(len(calls), 1)
 
 
 if __name__ == "__main__":

@@ -1,10 +1,10 @@
-# Entornos virtuales y dependencias
+# Virtual environments and dependencies
 .venv/
 venv/
 env/
 node_modules/
 
-# Bytecode y cachés de Python
+# Python bytecode and caches
 __pycache__/
 *.py[cod]
 *$py.class
@@ -14,13 +14,13 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# Artefactos de empaquetado
+# Packaging artefacts
 build/
 dist/
 *.egg-info/
 *.spec.bak
 
-# Salidas generadas en tiempo de ejecución
+# Runtime output
 salida/
 *.log
 *.tmp
@@ -29,12 +29,12 @@ salida/
 _tests.txt
 _rd.txt
 
-# Datos locales del operador
+# Operator's local data
 *.db
 *.sqlite3
 inventory.json
 
-# Editores y sistema operativo
+# Editors and operating system
 .vscode/
 .idea/
 *.swp

@@ -34,7 +34,7 @@ def dns_lookup(domain: str, record_type: str = "A") -> ToolResult:
     result = ToolResult(name=f"DNS {record_type}: {domain}")
 
     if not domain.strip():
-        result.ok, result.error = False, "Dominio vacio"
+        result.ok, result.error = False, "Empty domain"
         return result
 
     record_type = record_type.upper().strip() or "A"
@@ -46,7 +46,7 @@ def dns_lookup(domain: str, record_type: str = "A") -> ToolResult:
             result.lines = addresses
             result.ok = bool(addresses)
             if not addresses:
-                result.error = "Sin registros"
+                result.error = "No records"
         except socket.gaierror as exc:
             result.ok, result.error = False, str(exc)
     else:
@@ -84,13 +84,13 @@ def zone_transfer(domain: str) -> ToolResult:
     """
     result = ToolResult(name=f"Zone transfer: {domain}")
     if not domain.strip():
-        result.ok, result.error = False, "Dominio vacio"
+        result.ok, result.error = False, "Empty domain"
         return result
 
     _code, stdout, _err = _run(["nslookup", "-type=NS", domain], timeout=15.0)
     servers = [line.strip() for line in stdout.splitlines() if line.strip().startswith("NS")]
     if not servers:
-        result.ok, result.error = False, "No se pudieron obtener los servidores NS"
+        result.ok, result.error = False, "Could not fetch the NS servers"
         return result
 
     for record in servers:
@@ -112,11 +112,11 @@ def email_security_records(domain: str) -> ToolResult:
     """Retrieve SPF, DMARC and MX records, the baseline of mail security."""
     result = ToolResult(name=f"SPF/DMARC/MX: {domain}")
     if not domain.strip():
-        result.ok, result.error = False, "Dominio vacio"
+        result.ok, result.error = False, "Empty domain"
         return result
 
     queries = (
-        ("SPF (TXT del dominio)", domain, "TXT"),
+        ("SPF (domain TXT)", domain, "TXT"),
         ("DMARC (_dmarc)", f"_dmarc.{domain}", "TXT"),
         ("MTA-STS", f"_mta-sts.{domain}", "TXT"),
         ("MX", domain, "MX"),
@@ -139,9 +139,9 @@ def dns_summary(domain: str) -> ToolResult:
     authority records from nslookup, so the panel still shows something
     useful on a host where one of the two is unavailable.
     """
-    result = ToolResult(name=f"Resumen DNS: {domain}")
+    result = ToolResult(name=f"DNS summary: {domain}")
     if not domain.strip():
-        result.ok, result.error = False, "Dominio vacio"
+        result.ok, result.error = False, "Empty domain"
         return result
 
     try:
@@ -169,7 +169,7 @@ def dns_summary(domain: str) -> ToolResult:
 
     if not result.lines:
         result.ok = False
-        result.error = result.error or "Sin registros"
+        result.error = result.error or "No records"
     result.output = "\n".join(result.lines)
     return result
 
@@ -200,7 +200,7 @@ def traceroute(target: str, max_hops: int = 20) -> ToolResult:
     """Trace the network path to a host, resolving each hop when possible."""
     result = ToolResult(name=f"Traceroute: {target}")
     if not target.strip():
-        result.ok, result.error = False, "Destino vacio"
+        result.ok, result.error = False, "Empty target"
         return result
 
     hops = max(1, min(int(max_hops), 64))
@@ -208,7 +208,7 @@ def traceroute(target: str, max_hops: int = 20) -> ToolResult:
     if code == 127:
         code, stdout, stderr = _run(["traceroute", "-n", "-m", str(hops), "-w", "1", target], timeout=60.0)
     if code == 127:
-        result.ok, result.error = False, "traceroute no disponible en este sistema"
+        result.ok, result.error = False, "traceroute is not available on this system"
         return result
     if code not in (0, 1):
         result.ok, result.error = False, stderr.strip() or "tracert fallo"
@@ -216,7 +216,7 @@ def traceroute(target: str, max_hops: int = 20) -> ToolResult:
 
     result.hops = parse_traceroute(stdout)
     for hop in result.hops:
-        rtt = "/".join(f"{value:.0f}" for value in hop.rtts) or "sin respuesta"
+        rtt = "/".join(f"{value:.0f}" for value in hop.rtts) or "no reply"
         row = f"  {hop.hop:>2}  {hop.address:<16} {rtt} ms"
         if hop.hostname:
             row += f"   [{hop.hostname}]"
@@ -225,7 +225,7 @@ def traceroute(target: str, max_hops: int = 20) -> ToolResult:
     result.output = "\n".join(result.lines)
     result.ok = bool(result.lines)
     if not result.ok:
-        result.error = "Sin saltos devueltos"
+        result.error = "No hops returned"
     return result
 
 
@@ -266,7 +266,7 @@ def ping_host(host: str, count: int = 4, timeout: float = 2.0) -> ToolResult:
     """Ping a host and report latency, packet loss and the observed TTL."""
     result = ToolResult(name=f"Ping: {host}")
     if not host.strip():
-        result.ok, result.error = False, "Destino vacio"
+        result.ok, result.error = False, "Empty target"
         return result
 
     count = max(1, min(int(count), 20))
@@ -274,14 +274,14 @@ def ping_host(host: str, count: int = 4, timeout: float = 2.0) -> ToolResult:
     if code == 127:
         code, stdout, stderr = _run(["ping", "-c", str(count), "-W", str(int(timeout)), host], timeout=count * timeout + 10)
     if code == 127:
-        result.ok, result.error = False, "ping no disponible"
+        result.ok, result.error = False, "ping is not available on this system"
         return result
 
     result.output = stdout.strip()
     result.lines = [line.strip() for line in stdout.splitlines() if line.strip()]
     result.ok = code == 0
     if not result.ok:
-        result.error = "Sin respuesta (host inaccesible o bloquea ICMP)"
+        result.error = "No reply (host unreachable or blocking ICMP)"
     return result
 
 
@@ -315,7 +315,7 @@ def whois_lookup(query: str) -> ToolResult:
     """
     result = ToolResult(name=f"WHOIS: {query}")
     if not query.strip():
-        result.ok, result.error = False, "Consulta vacia"
+        result.ok, result.error = False, "Empty query"
         return result
 
     query = query.strip()
@@ -512,7 +512,7 @@ def split_subnet(cidr: str, count: int = 4) -> ToolResult:
     only be split evenly into a power-of-two number of blocks. The plan
     travels in ``result.data`` as a list of :class:`SubnetInfo`.
     """
-    result = ToolResult(name=f"Division de subred: {cidr}")
+    result = ToolResult(name=f"Subnet split: {cidr}")
     try:
         network = ipaddress.ip_network(cidr.strip(), strict=False)
     except ValueError as exc:
@@ -523,7 +523,7 @@ def split_subnet(cidr: str, count: int = 4) -> ToolResult:
     extra_bits = max(0, (wanted - 1).bit_length())
     target = network.prefixlen + extra_bits
     if target > network.max_prefixlen:
-        result.ok, result.error = False, "El bloque ya no se puede dividir mas"
+        result.ok, result.error = False, "The block cannot be split any further"
         return result
 
     blocks = [network] if extra_bits == 0 else network.subnets(new_prefix=target)
@@ -534,7 +534,7 @@ def split_subnet(cidr: str, count: int = 4) -> ToolResult:
             plan.append(details.data)   # type: ignore[arg-type]
 
     result.lines = ["  {:>3}  {:<22} {:<16} {:<16} {:<16} {:>7}".format(
-        "#", "Red", "Primer host", "Ultimo host", "Broadcast", "Usables"
+        "#", "Network", "First host", "Last host", "Broadcast", "Usable"
     )]
     for index, info in enumerate(plan, start=1):
         result.lines.append(
@@ -562,14 +562,14 @@ def subnet_info(cidr: str) -> ToolResult:
         first_host, last_host = info.first_host, info.last_host
 
     lines = [
-        f"Red          : {info.network}/{info.prefixlen}",
-        f"Mascara      : {info.netmask}",
-        f"Primer host  : {first_host}",
-        f"Ultimo host  : {last_host}",
+        f"Network      : {info.network}/{info.prefixlen}",
+        f"Netmask      : {info.netmask}",
+        f"First host   : {first_host}",
+        f"Last host    : {last_host}",
         f"Broadcast    : {info.broadcast}",
-        f"Direcciones  : {info.total_addresses}",
-        f"Usables      : {info.usable_hosts}",
-        f"Tipo         : {'privada' if info.is_private else 'publica'}",
+        f"Addresses    : {info.total_addresses}",
+        f"Usable       : {info.usable_hosts}",
+        f"Type         : {'private' if info.is_private else 'public'}",
     ]
     details.lines = lines
     details.output = "\n".join(lines)
@@ -578,7 +578,7 @@ def subnet_info(cidr: str) -> ToolResult:
 
 def ip_in_network(ip: str, cidr: str) -> ToolResult:
     """Check whether an address falls inside a CIDR block."""
-    result = ToolResult(name=f"Contencion: {ip} en {cidr}")
+    result = ToolResult(name=f"Membership: {ip} in {cidr}")
     try:
         address = ipaddress.ip_address(ip.strip())
         network = ipaddress.ip_network(cidr.strip(), strict=False)
@@ -587,8 +587,8 @@ def ip_in_network(ip: str, cidr: str) -> ToolResult:
         return result
 
     inside = address.version == network.version and address in network
-    result.output = "SI" if inside else "NO"
-    result.lines = [f"{ip} {'pertenece a' if inside else 'NO pertenece a'} {network}"]
+    result.output = "YES" if inside else "NO"
+    result.lines = [f"{ip} {'belongs to' if inside else 'does NOT belong to'} {network}"]
     result.ok = True
     return result
 
@@ -598,17 +598,17 @@ def ip_in_network(ip: str, cidr: str) -> ToolResult:
 # ---------------------------------------------------------------------------
 def local_exposure_report() -> ToolResult:
     """Summarise VPN adapters, proxy ports and listening services on this host."""
-    result = ToolResult(name="Exposicion local")
+    result = ToolResult(name="Local exposure")
     adapters = get_virtual_adapters()
     processes = get_running_vpn_processes()
     proxies = get_local_proxy_ports()
 
-    lines = ["Adaptadores virtuales:"]
-    lines.extend(f"  - {name}" for name in adapters) or ["  (ninguno)"]
-    lines.append("Procesos VPN/proxy:")
-    lines.extend(f"  - {name}" for name in processes) or ["  (ninguno)"]
-    lines.append("Puertos proxy en escucha:")
-    lines.extend(f"  - {port}/tcp  {label}" for port, label in proxies.items()) or ["  (ninguno)"]
+    lines = ["Virtual adapters:"]
+    lines.extend([f"  - {name}" for name in adapters] or ["  (none)"])
+    lines.append("VPN/proxy processes:")
+    lines.extend([f"  - {name}" for name in processes] or ["  (none)"])
+    lines.append("Listening proxy ports:")
+    lines.extend([f"  - {port}/tcp  {label}" for port, label in proxies.items()] or ["  (none)"])
 
     result.lines = lines
     result.output = "\n".join(lines)
@@ -618,13 +618,13 @@ def local_exposure_report() -> ToolResult:
 
 def listening_ports() -> ToolResult:
     """List the TCP ports this machine is currently listening on."""
-    result = ToolResult(name="Puertos en escucha")
+    result = ToolResult(name="Listening ports")
     try:
         import psutil
 
         connections = psutil.net_connections(kind="inet")
     except (psutil.AccessDenied, RuntimeError, OSError) as exc:
-        result.ok, result.error = False, f"No se pudieron leer las conexiones: {exc}"
+        result.ok, result.error = False, f"Could not read the connections: {exc}"
         return result
 
     seen: set[tuple[str, int]] = set()
@@ -637,7 +637,195 @@ def listening_ports() -> ToolResult:
             result.lines.append(f"  {host}:{port}/tcp")
 
     if not result.lines:
-        result.lines = ["  (ninguno)"]
+        result.lines = ["  (none)"]
     result.output = "\n".join(result.lines)
     result.ok = True
+    return result
+
+# ---------------------------------------------------------------------------
+# Host checks: ports, TLS, HTTP headers
+# ---------------------------------------------------------------------------
+def port_check(host: str, ports: tuple[int, ...], timeout: float = 0.8,
+               workers: int = 400) -> ToolResult:
+    """TCP-connect probe of an explicit port list on a single host."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from ..core.models import KNOWN_SERVICES
+
+    host = host.strip()
+    result = ToolResult(name=f"Port check: {host}")
+    if not host:
+        result.ok, result.error = False, "Empty target"
+        return result
+    if not ports:
+        result.ok, result.error = False, "No ports to probe"
+        return result
+    try:
+        address = socket.gethostbyname(host)
+    except (socket.gaierror, UnicodeError) as exc:
+        result.ok, result.error = False, f"Cannot resolve {host}: {exc}"
+        return result
+
+    started = time.perf_counter()
+
+    def probe(port: int) -> tuple[int, str, float | None]:
+        begun = time.perf_counter()
+        try:
+            with socket.create_connection((address, port), timeout=timeout):
+                return port, "open", (time.perf_counter() - begun) * 1000
+        except ConnectionRefusedError:
+            return port, "closed", None
+        except OSError:
+            return port, "filtered", None
+
+    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(ports)))) as pool:
+        outcomes = list(pool.map(probe, ports))
+
+    opened = [item for item in outcomes if item[1] == "open"]
+    closed = sum(1 for item in outcomes if item[1] == "closed")
+    filtered = len(outcomes) - len(opened) - closed
+    result.lines = [f"Target: {host} ({address})",
+                    f"{'PORT':<10}{'STATE':<10}{'SERVICE':<16}LATENCY"]
+    for port, state, latency in opened:
+        service = KNOWN_SERVICES.get(port, "")
+        result.lines.append(
+            f"{str(port) + '/tcp':<10}{state:<10}{service:<16}{latency:.1f} ms")
+    if not opened:
+        result.lines.append("(no open ports)")
+    result.lines.append(f"{len(opened)} open, {closed} closed, {filtered} filtered "
+                        f"out of {len(outcomes)} probed")
+    result.elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+    result.output = "\n".join(result.lines)
+    result.data = [port for port, *_rest in opened]
+    return result
+
+
+def tls_check(host: str, port: int = 443) -> ToolResult:
+    """Certificate, protocol and cipher of a TLS endpoint."""
+    from ..analysis.audit import inspect_tls
+
+    host = host.strip()
+    result = ToolResult(name=f"TLS: {host}:{port}")
+    if not host:
+        result.ok, result.error = False, "Empty target"
+        return result
+    report = inspect_tls(host, port)
+    if not report.supported:
+        result.ok, result.error = False, report.error or "No TLS handshake"
+        return result
+    days = report.days_remaining if report.days_remaining is not None else "-"
+    result.lines = [
+        f"Protocol     : {report.protocol}",
+        f"Cipher       : {report.cipher}",
+        f"Subject      : {report.subject or '-'}",
+        f"Issuer       : {report.issuer or '-'}",
+        f"Valid from   : {report.not_before or '-'}",
+        f"Valid until  : {report.not_after or '-'}",
+        f"Days left    : {days}",
+        f"Alt names    : {', '.join(report.subject_alt_names[:10]) or '-'}",
+    ]
+    issues = [item for item in report.findings if not item.startswith("Issued by")]
+    result.lines.append("Findings     : " + ("; ".join(issues) if issues else "none"))
+    result.output = "\n".join(result.lines)
+    return result
+
+
+def http_headers(url: str) -> ToolResult:
+    """Status, server banner and missing security headers of a URL."""
+    from ..analysis.audit import audit_http
+
+    url = url.strip()
+    result = ToolResult(name=f"HTTP headers: {url}")
+    if not url:
+        result.ok, result.error = False, "Empty URL"
+        return result
+    report = audit_http(url)
+    if report.error and report.status_code is None:
+        result.ok, result.error = False, report.error
+        return result
+    result.lines = [
+        f"URL          : {report.url}",
+        f"Status       : {report.status_code}",
+        f"Server       : {report.server or '-'}",
+        f"Time         : {report.elapsed_ms} ms",
+        "",
+        "Response headers:",
+    ]
+    result.lines += [f"  {key}: {value}" for key, value in list(report.headers.items())[:40]]
+    result.lines += ["", "Security findings:"]
+    result.lines += ([f"  [{severity.upper()}] {text}" for severity, text in report.findings]
+                     or ["  none"])
+    result.output = "\n".join(result.lines)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Local machine
+# ---------------------------------------------------------------------------
+def _ip_sort_key(value: str) -> tuple[int, ...]:
+    try:
+        return tuple(int(part) for part in value.split("."))
+    except ValueError:
+        return (999,)
+
+
+def arp_table() -> ToolResult:
+    """The operating system's neighbour (ARP) cache, with vendors."""
+    from ..core.utils import lookup_vendor, read_arp_cache
+
+    result = ToolResult(name="ARP table")
+    try:
+        cache = read_arp_cache()
+    except Exception as exc:  # noqa: BLE001 - platform specific failure
+        result.ok, result.error = False, str(exc)
+        return result
+    result.lines = [f"{'IP':<18}{'MAC':<20}VENDOR"]
+    for ip in sorted(cache, key=_ip_sort_key):
+        result.lines.append(f"{ip:<18}{cache[ip]:<20}{lookup_vendor(cache[ip]) or '-'}")
+    if len(result.lines) == 1:
+        result.lines.append("(empty)")
+    result.output = "\n".join(result.lines)
+    return result
+
+
+def local_adapters() -> ToolResult:
+    """Local network interfaces with address, network and gateway."""
+    from ..core.utils import default_gateway, list_adapters
+
+    result = ToolResult(name="Network adapters")
+    for adapter in list_adapters():
+        if not adapter.address:
+            continue
+        state = "up" if adapter.is_up else "down"
+        kind = "virtual" if adapter.is_virtual else "physical"
+        result.lines.append(adapter.name)
+        result.lines.append(f"  address  : {adapter.address} / {adapter.netmask}")
+        result.lines.append(f"  network  : {adapter.network or '-'}  ({state}, {kind})")
+        if adapter.is_scannable:
+            result.lines.append(f"  scan     : {adapter.sweep_range}")
+    result.lines.append(f"Default gateway: {default_gateway() or '-'}")
+    result.output = "\n".join(result.lines)
+    return result
+
+
+def wake_on_lan(mac: str) -> ToolResult:
+    """Broadcast a Wake-on-LAN magic packet to a MAC address."""
+    from ..actions.wol import send_wol
+
+    mac = mac.strip()
+    result = ToolResult(name=f"Wake-on-LAN: {mac}")
+    try:
+        sent = send_wol(mac)
+    except ValueError:
+        result.ok, result.error = False, f"'{mac}' is not a valid MAC address"
+        return result
+    except OSError as exc:
+        result.ok, result.error = False, str(exc)
+        return result
+    result.ok = sent > 0
+    result.output = (f"Magic packet broadcast to {mac}" if result.ok
+                     else "The broadcast could not be sent from this adapter")
+    result.lines = [result.output]
+    if not result.ok:
+        result.error = result.output
     return result

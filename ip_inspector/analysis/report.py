@@ -232,12 +232,12 @@ INK_SOFT = (0.42, 0.45, 0.48)
 #: Table geometry: (header, width, alignment, monospace).
 _DEVICE_COLUMNS = (
     ("IP", 88, "l", True),
-    ("Estado", 52, "c", False),
-    ("Nombre", 104, "l", False),
+    ("Status", 52, "c", False),
+    ("Name", 104, "l", False),
     ("MAC", 104, "l", True),
-    ("Fabricante", 104, "l", False),
-    ("Tipo", 84, "l", False),
-    ("Puertos", 44, "r", True),
+    ("Vendor", 104, "l", False),
+    ("Type", 84, "l", False),
+    ("Ports", 44, "r", True),
 )
 
 

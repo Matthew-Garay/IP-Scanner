@@ -1,27 +1,26 @@
-"""Suite de regresiones permanente.
+"""Permanent regression suite.
 
-Cada prueba reproduce un fallo real que estuvo en produccion. No son pruebas
-de cobertura generica: son las trampas concretas en las que esta aplicacion ha
-caido, fijadas para que no vuelvan a caerse sin que nadie se entere.
+Each test reproduces a real bug this application shipped at some point. They
+are not generic coverage tests: they pin the specific traps this project fell
+into so they cannot come back unnoticed.
 
-Ejecutar con::
+Run with::
 
     python -m unittest discover -s tests -t . -v
 
-Solo usa la libreria estandar: la aplicacion se empaqueta con PyInstaller y
-anadir una dependencia de test no compensa.
+Standard library only: the app is packaged with PyInstaller and a test
+dependency is not worth it.
 """
 
 import tkinter
 
 
 class _QuietResult:
-    """Silencia el ruido de customtkinter al cerrar cada prueba de interfaz.
+    """Silence customtkinter's noise when each GUI test closes its window.
 
-    Al destruir una ventana quedan ``after()`` pendientes que Tk dispara sobre
-    una aplicacion ya cerrada, y escribe un ``bgerror`` por cada uno. No es un
-    fallo: ignorarlo deja la salida legible y evita que alguien lo lea como una
-    regresion real.
+    Destroying a window leaves pending ``after()`` callbacks that Tk fires on
+    an application that is already gone, writing a ``bgerror`` for each. It is
+    not a failure: ignoring it keeps the output readable.
     """
 
     def __getattr__(self, name):

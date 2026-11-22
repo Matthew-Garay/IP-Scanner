@@ -1,55 +1,72 @@
-# Guia de Instalacion - IP Scanner
+# Setup Guide - IP Inspector
 
-Esta guia te ayuda a instalar y ejecutar IP Scanner en tu entorno local.
+This guide helps you install and run IP Inspector locally.
 
-## Requisitos previos
+## Prerequisites
 
-- Windows 10 o Windows 11
-- Python 3.13 o superior
-- Permisos de administrador (para sondeo de descubrimiento de red)
+- Windows 10 or Windows 11
+- Python 3.10 or later (3.13 recommended)
+- Administrator rights for the full discovery sweep (optional: without them
+  the app runs in a limited mode)
 
-## Instalacion
+## Installation
 
-1. Clona el repositorio:
-   ```bash
+1. Clone the repository:
+   ```powershell
    git clone https://github.com/Matthew-Garay/IP-Scanner.git
    cd IP-Scanner
    ```
 
-2. Crea y activa un entorno virtual:
-   ```bash
+2. Create and activate a virtual environment:
+   ```powershell
    python -m venv .venv
    .venv\Scripts\Activate.ps1
    ```
 
-3. Instala las dependencias:
-   ```bash
+3. Install the dependencies:
+   ```powershell
    pip install -r requirements.txt
    ```
 
-4. Ejecuta la aplicación como administrador:
-   ```bash
+4. Run the application (ideally from an administrator terminal):
+   ```powershell
    python -m ip_inspector.main
    ```
 
-## Verificacion
+## First scan
 
-La aplicación debe abrir una ventana mostrando la interfaz de escaneo de red con la tabla de dispositivos y las pestañas de herramientas.
+1. The range of your local network is filled in automatically
+   (for example `192.168.1.0/24`). You can also pick an adapter or type
+   any range: `10.0.0.1-50`, `192.168.1.10`, or several separated by commas.
+2. Choose a profile. *Standard* is a good default; *Full* checks ports
+   1-1024; *Ping sweep only* just lists the live hosts.
+3. Press **Scan** (F5). Click a device to see its details, right-click it for
+   actions.
 
-## Ejecutar pruebas
+## Running the tests
 
-```bash
-python -m pytest tests/ -v
+```powershell
+python -m unittest discover -s tests -t . -v
 ```
 
-## Compilar ejecutable
+## Building the executable
 
-```bash
+```powershell
 pip install pyinstaller
 pyinstaller IP_Inspector.spec
-# Resultado: dist\IP_Inspector.exe
+# Output: dist\IP_Inspector.exe
 ```
 
-## Uso responsable
+## Troubleshooting
 
-Esta herramienta sondea equipos de red. Usala solo en redes donde tengas permiso.
+| Symptom | Fix |
+|---------|-----|
+| Devices show no MAC address | Run as administrator (Settings › Restart as administrator) |
+| Scan is slow | Use the *Quick* profile or lower the timeout in Options (F8) |
+| Too many sockets / errors on a big range | Lower *Threads* in Options |
+| Traceroute or WHOIS fails | Those tools need `tracert` / network access to WHOIS servers |
+
+## Responsible use
+
+This tool probes network devices. Only use it on networks you own or are
+authorised to test.

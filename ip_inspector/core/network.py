@@ -659,7 +659,9 @@ class NetworkScanner:
         banner = ""
         try:
             sock.settimeout(min(0.5, timeout))
-            banner = sock.recv(512).decode("utf-8", "replace").strip()
+            # Raw greetings carry binary (MySQL opens with a length byte and a
+            # protocol version); the shared cleaner keeps only readable text.
+            banner = summarise_banner(sock.recv(512), port_number)
         except (socket.timeout, OSError):
             pass
         finally:

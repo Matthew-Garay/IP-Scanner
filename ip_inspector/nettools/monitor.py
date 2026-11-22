@@ -349,6 +349,10 @@ class Monitor:
     async def _poll_forever(self, host: WatchedHost) -> None:
         """Probe a host forever, respecting its interval and stop flag."""
         while not self._stop_event.is_set():
+            # A removed host must stop polling, not linger in the background.
+            with self._lock:
+                if self._hosts.get(host.ip) is not host:
+                    return
             await self._poll_once(host)
             # Sleep on the async event, not the threading one, so the
             # interval never blocks sibling hosts.

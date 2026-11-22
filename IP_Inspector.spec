@@ -1,14 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
-# IP Inspector — spec ordenado en la raiz del proyecto.
-# Compilar con:  pyinstaller IP_Inspector.spec   ->  dist/IP_Inspector.exe
-# Usa rutas relativas: funciona en cualquier carpeta o PC.
+# IP Inspector build spec (lives in the project root).
+# Build with:  pyinstaller IP_Inspector.spec   ->  dist/IP_Inspector.exe
+# Relative paths only: works from any folder or PC.
 
 a = Analysis(
     ['ip_inspector/launcher.py'],
     pathex=['.'],
     binaries=[],
     datas=[('ip_inspector/assets', 'assets')],
-    hiddenimports=['ip_inspector', 'ip_inspector.interface.ui', 'ip_inspector.interface.theme', 'ip_inspector.interface.fasttable', 'ip_inspector.core.network', 'ip_inspector.core.models', 'ip_inspector.core.utils', 'ip_inspector.core.identify', 'ip_inspector.core.hostnames', 'ip_inspector.core.ping', 'ip_inspector.analysis.audit', 'ip_inspector.analysis.exposure', 'ip_inspector.analysis.report', 'ip_inspector.nettools.tools', 'ip_inspector.nettools.monitor', 'ip_inspector.nettools.profiles', 'ip_inspector.actions.exporter', 'ip_inspector.actions.menu', 'ip_inspector.actions.wol', 'ip_inspector.i18n'],
+    hiddenimports=['ip_inspector', 'ip_inspector.interface.ui', 'ip_inspector.interface.theme', 'ip_inspector.interface.widgets', 'ip_inspector.interface.tools_tab', 'ip_inspector.interface.monitor_tab', 'ip_inspector.interface.settings', 'ip_inspector.core.network', 'ip_inspector.core.models', 'ip_inspector.core.utils', 'ip_inspector.core.identify', 'ip_inspector.core.hostnames', 'ip_inspector.core.ping', 'ip_inspector.analysis.audit', 'ip_inspector.analysis.exposure', 'ip_inspector.analysis.report', 'ip_inspector.nettools.tools', 'ip_inspector.nettools.monitor', 'ip_inspector.nettools.profiles', 'ip_inspector.actions.exporter', 'ip_inspector.actions.menu', 'ip_inspector.actions.wol', 'ip_inspector.i18n'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

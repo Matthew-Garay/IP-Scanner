@@ -1,108 +1,85 @@
-# IP Inspector
+# IP Inspector — notes for contributors and coding agents
 
-Aplicación de escritorio para Windows que escanea la red local: descubre
-dispositivos conectados, revisa puertos abiertos, identifica modelo y sistema
-operativo, y evalúa la postura de seguridad de cada host. Interfaz estilo
-Advanced IP Scanner: tabla virtualizada de 6 columnas (Estado, IP, Nombre,
-MAC, Fabricante, Puertos), con scroll nativo y modos Rápido/Completo.
+Windows desktop app that scans the local network: discovers devices, checks
+open ports, identifies model and operating system, scores security exposure,
+and bundles network diagnostics and a host monitor. The whole UI is English.
 
-Dependencias producción: `customtkinter`, `scapy`, `psutil`, `mac-vendor-lookup`.
+Production dependencies: `customtkinter`, `scapy`, `psutil`, `mac-vendor-lookup`.
 
-## Estructura ordenada
+## Layout
 
 ```
-D:/Escaner de puertos/
-  IP_Inspector.spec      spec con rutas relativas (pyinstaller IP_Inspector.spec)
-  requirements.txt       dependencias (raiz, no dentro del paquete)
-  README.md / AGENTS.md / ARCHITECTURE.md
-  ip_inspector/          paquete (sin .venv ni dist dentro)
-    core/                modelos, utils, sondeo, NetworkScanner
-    analysis/            riesgo, exposicion, informes
-    actions/             abrir, WoL, exportar
-    nettools/            tools, monitor, profiles
-    interface/           ui.py + theme.py + fasttable.py (tabla virtualizada)
-    i18n.py              catalogo bilingue
-    launcher.py / main.py / assets/
-  tests/                 regresiones (solo stdlib)
-  docs/architecture/     nota de diseno
+IP_Inspector.spec      PyInstaller spec (relative paths): pyinstaller IP_Inspector.spec
+requirements.txt
+README.md / ABOUT.md / ARCHITECTURE.md / AGENTS.md
+docs/setup-guide.md
+ip_inspector/
+  core/        models, utils, ping, hostnames, identify, network (NetworkScanner)
+  analysis/    audit (TLS/HTTP), exposure (risk heuristics), report (HTML/PDF)
+  actions/     exporter (CSV/JSON), menu (web/RDP/WoL), wol
+  nettools/    tools (diagnostics), monitor, profiles (scan profiles + parse_ports)
+  interface/   ui, widgets, tools_tab, monitor_tab, settings, theme
+  i18n.py      text catalogue; the app forces English
+  main.py / launcher.py / assets/
+tests/         regression tests, standard library only
 ```
 
-`.venv/` vive en `ip_inspector/.venv` (heredado); lo ideal es recrearlo en la
-raiz con `python -m venv .venv`. `dist/` con el .exe tambien debe salir del
-paquete a la raiz (PyInstaller lo genera ahi con el spec nuevo).
+## Layer rule
 
-## Regla de oro de capas
+Each layer imports only from the layers above it in this list:
+`core` → `analysis` → `actions` → `nettools` → `interface`.
+`core` never imports `interface`, so the engine runs headless. The package
+`__init__.py` never imports the interface.
 
-El paquete es una pila donde cada capa solo puede importar de las que está
-por debajo:
+## Conventions
 
-```
-core       -> modelos, utilidades, sondeo, NetworkScanner
-analysis   -> ide de core (auditoría, exposición, informes)
-actions    -> lo que puede hacerse con un equipo (abrir, WoL, exportar)
-nettools   -> pestañas de herramientas y monitor
-i18n       -> catálogo bilingüe, usado por los informes y la ventana
-interface  -> todo lo que toca tkinter
-```
+- Python 3.10+ (3.13 recommended), `from __future__ import annotations`.
+- Pure data in `core/models.py`; the engine never imports tkinter.
+- All source files are UTF-8; pass `encoding="utf-8"` to `open()`/`write_text`.
+- `customtkinter` is the only GUI library; do not add third-party dependencies.
+- Tools return a `ToolResult` and never raise.
+- User-visible text is English.
 
-`core` nunca importa a `interface`; por eso el motor puede funcionar sin
-pantalla. La interfaz nunca se importa desde `__init__.py` de la raíz.
-
-## Dónde buscar
-
-| Capa | Pila | Responsabilidades |
-| ---- | ---- | ----------------- |
-| **core** | `core/models.py`, `core/utils.py`, `core/network.py`, `core/ping.py`, `core/identify.py`, `core/hostnames.py` | Modelos de dominio (Device, Port, ScanRequest…), auxiliares de la plataforma, motor de escaneo y detección. |
-| **analysis** | `analysis/audit.py`, `analysis/exposure.py`, `analysis/report.py` | Qué significan los hallazgos: puntuación de riesgo, análisis de exposición y generación de PDF/HTML. |
-| **actions** | `actions/exporter.py`, `actions/menu.py`, `actions/wol.py` | Acciones sobre un dispositivo: exportar, abrir RDP/web, WoL, menú contextual. |
-| **nettools** | `nettools/tools.py`, `nettools/monitor.py`, `nettools/profiles.py` | Pestañas Tools y Quick Tools, y el monitor continuo. |
-| **interface** | `interface/ui.py`, `interface/theme.py`, `interface/i18n.py` | Todo lo que toca tkinter y la interfaz de usuario. |
-| **i18n** | `i18n.py` | Catálogo bilingüe; aplicarlo a la salida humana, no a las claves de datos. |
-
-Agregue un módulo en `core` o `analysis` respetando esta pila. Si necesita
-escribir en la ventana, hágalo en `interface`, no en el motor.
-
-## Convenciones
-
-- **Python 3.13+**, tipado explícito (`from __future__ import annotations`).
-- Datos puros y libres de dependencias en `core/models.py`; el motor no puede
-  importar tkinter ni scapy desde ahí.
-- Todos los módulos de la capa `core` y `analysis` declaran ante
-  `from __future__ import annotations` y los dataclass con `slots=True`.
-- Los reportes PDF/HTML y la tabla composición se traen de `core.models` o
-  de módulos analíticos, nunca se generan en `interface`.
-- Los textiles de todos los archivos fuente son UTF-8 (el código usa
-  `encoding="utf-8"` explícito en `open()` y `write_text`).
-- `customtkinter` es la única librería GUI; no añadir dependencias third-party.
-
-## Pruebas
+## Tests
 
 ```powershell
 python -m unittest discover -s tests -t . -v
 ```
 
-Solo usa la librería estándar. Cada prueba es una trampas documentó un fallo
-real que tuvo la aplicación; mantenlas actualizadas si se cambia ese contrato.
+GUI tests create a real window (hidden) and redirect
+`interface.settings.SETTINGS_FILE` to a temporary folder, so they never
+touch the user's preferences.
 
-## Comandos
+## Commands
 
-- Ejecutar: `python -m ip_inspector.main` (requiere administrador Windows).
-- Empaquetar: `pyinstaller ip_inspector\IP_Inspector.spec` → `dist/IP_Inspector.exe`.
-- El `.spec` apunta a `launcher.py` (no a `main.py`) porque PyInstaller no
-  resuelve las importaciones relativas; `launcher.py` arranca el paquete desde
-  `ip_inspector.main`.
+- Run: `python -m ip_inspector.main` (run as administrator for the full ARP sweep).
+- Build: `pyinstaller IP_Inspector.spec` → `dist/IP_Inspector.exe`.
+- The spec points at `launcher.py`, not `main.py`, because PyInstaller does
+  not resolve the relative imports of `main.py`. New modules must be added to
+  `hiddenimports` in the spec.
 
-## Notas de diseño (cambios recientes)
+## Design notes
 
-- Tabla `ResultTable` sobresale de `ResultTable.{ROW_HEIGHT, HEADER_FONT_SIZE,
-  ROW_FONT_SIZE, ROW_FONT_PADDING}`; no añada columnas por fuera de
-  `DEVICE_COLUMNS` sin actualizar `ui.py` y los tests de geometría.
-- `ports_compact()` devuelve todos los puertos abiertos como texto plano,
-  sin truncado; la información completa queda en `ports_summary`, en el
-  menú contextual, en la exportación y en el informe.
-- La ventana mínima es `(1400, 760)`; `MIN_WINDOW_WIDTH` y `TABLE_MIN_HEIGHT`
-  viven en `core/models.py` (el dominio), `WINDOW_MINIMUM` en `interface/ui.py`
-  (la representación).
-- La tabla de resultados no vuelve a `ctk.CTkScrollableFrame`; el propio
-  `ResultTable` es el contenedor y el `body` es un `ctk.CTkFrame` que crece
-  verticalmente. Ya no hay scroll horizontal ni vertical.
+- **Engine → window event contract.** `interface/ui.py` listens for the exact
+  phases `NetworkScanner` emits (`Device`, `Discovery`, `Ports`, `Models`,
+  `Fingerprint`, `Finished`, `Cancelled`, `Error`). Renaming one in
+  `core/network.py` makes `tests/test_ui.py` fail on purpose.
+- The scan worker always ends by posting `WORKER_DONE`, even if the engine
+  raises; it is the only signal that re-enables the buttons. *Stop* only
+  requests cancellation and waits for it.
+- The results table (`widgets.DeviceTree`) is a `ttk.Treeview` with the
+  columns in `TREE_COLUMNS`. Rows are updated in place with `upsert_device`,
+  so selection and expanded rows survive; only filtering or sorting rebuilds.
+- `Device.open_ports` also holds closed/filtered ports: always filter with
+  `port.is_open` (see `widgets.open_ports`).
+- Port banners go through `identify.summarise_banner`; raw greetings carry
+  binary (MySQL) that must never reach the table.
+- Risk is computed at the end of a scan with `analysis.exposure`
+  (offline heuristics, no extra traffic).
+- New-device detection keys on MAC (IP when no MAC). The first scan only
+  builds the baseline; *Settings › Forget known devices* resets it.
+- CustomTkinter colours are `(light, dark)` pairs from `widgets.c()`; native
+  widgets (Treeview, Listbox) are restyled in `IPInspectorApp._style_native`.
+- Adding a tool: function in `nettools/tools.py` + one `Tool` entry in
+  `interface/tools_tab.TOOLS`. Adding a profile: one `ScanProfile` in
+  `nettools/profiles.PROFILES`.

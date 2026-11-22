@@ -18,12 +18,12 @@ from ..core.models import Device, HttpReport, SecurityFinding, TlsReport
 
 #: HTTP headers that harden a site when present: (header, severity, meaning).
 SECURITY_HEADERS: tuple[tuple[str, str, str], ...] = (
-    ("Strict-Transport-Security", "high", "Ausencia de HSTS: no se fuerza HTTPS"),
-    ("Content-Security-Policy", "medium", "Sin CSP: riesgo de XSS"),
-    ("X-Frame-Options", "medium", "Sin X-Frame-Options: vulnerable a clickjacking"),
-    ("X-Content-Type-Options", "low", "Sin X-Content-Type-Options: permite MIME sniffing"),
-    ("Referrer-Policy", "low", "Sin Referrer-Policy: filtra URLs a terceros"),
-    ("Permissions-Policy", "info", "Sin Permissions-Policy: no restringe APIs"),
+    ("Strict-Transport-Security", "high", "Missing HSTS: HTTPS is not enforced"),
+    ("Content-Security-Policy", "medium", "No CSP: XSS risk"),
+    ("X-Frame-Options", "medium", "No X-Frame-Options: clickjacking possible"),
+    ("X-Content-Type-Options", "low", "No X-Content-Type-Options: allows MIME sniffing"),
+    ("Referrer-Policy", "low", "No Referrer-Policy: leaks URLs to third parties"),
+    ("Permissions-Policy", "info", "No Permissions-Policy: browser APIs unrestricted"),
 )
 
 #: TLS versions considered obsolete.
@@ -31,24 +31,24 @@ WEAK_PROTOCOLS = frozenset({"SSLv2", "SSLv3", "TLSv1", "TLSv1.1"})
 
 #: Exposed ports that carry a clear risk: (severity, explanation).
 RISKY_PORTS: dict[int, tuple[str, str]] = {
-    21: ("medium", "FTP sin cifrar: credenciales en texto claro"),
-    23: ("high", "Telnet expuesto: control remoto sin cifrar"),
-    69: ("medium", "TFTP sin autenticacion"),
-    445: ("high", "SMB expuesto: superficie de EternalBlue"),
-    512: ("medium", "rexec activo"),
-    513: ("medium", "rlogin activo"),
+    21: ("medium", "Unencrypted FTP: credentials in clear text"),
+    23: ("high", "Telnet exposed: unencrypted remote control"),
+    69: ("medium", "TFTP without authentication"),
+    445: ("high", "SMB exposed: EternalBlue attack surface"),
+    512: ("medium", "rexec enabled"),
+    513: ("medium", "rlogin enabled"),
     514: ("low", "Syslog expuesto"),
-    873: ("high", "rsync sin cifrar"),
-    1080: ("low", "SOCKS proxy: util para pivotar"),
-    2049: ("high", "NFS expuesto: acceso al sistema de ficheros"),
-    3306: ("high", "MySQL accesible desde la red"),
-    3389: ("medium", "RDP expuesto: objetivo de fuerza bruta"),
-    5432: ("high", "PostgreSQL accesible desde la red"),
+    873: ("high", "Unencrypted rsync"),
+    1080: ("low", "SOCKS proxy: usable for pivoting"),
+    2049: ("high", "NFS exposed: file system access"),
+    3306: ("high", "MySQL reachable from the network"),
+    3389: ("medium", "RDP exposed: brute-force target"),
+    5432: ("high", "PostgreSQL reachable from the network"),
     5900: ("medium", "VNC: suele usar contrasenas cortas"),
-    6379: ("critical", "Redis sin TLS: RCE en versiones antiguas"),
-    9200: ("high", "Elasticsearch sin autenticacion"),
-    11211: ("medium", "Memcached sin autenticacion"),
-    27017: ("high", "MongoDB accesible desde la red"),
+    6379: ("critical", "Redis without TLS: RCE on old versions"),
+    9200: ("high", "Elasticsearch without authentication"),
+    11211: ("medium", "Memcached without authentication"),
+    27017: ("high", "MongoDB reachable from the network"),
 }
 
 #: Severity weights used to fold findings into a single risk score.
@@ -153,16 +153,16 @@ def _tls_findings(report: TlsReport) -> list[str]:
     """Turn certificate facts into human-readable observations."""
     findings: list[str] = []
     if report.protocol in WEAK_PROTOCOLS:
-        findings.append(f"Protocolo obsoleto: {report.protocol}")
+        findings.append(f"Obsolete protocol: {report.protocol}")
     if report.days_remaining is not None:
         if report.days_remaining < 0:
-            findings.append(f"Certificado EXPIRADO hace {-report.days_remaining} dias")
+            findings.append(f"Certificate EXPIRED {-report.days_remaining} days ago")
         elif report.days_remaining < 15:
-            findings.append(f"Certificado caduca en {report.days_remaining} dias")
+            findings.append(f"Certificate expires in {report.days_remaining} days")
     if report.issuer:
-        findings.append(f"Emitido por: {report.issuer}")
+        findings.append(f"Issued by: {report.issuer}")
     if report.supported and not report.subject_alt_names:
-        findings.append("Sin subjectAltName (SNI)")
+        findings.append("No subjectAltName (SNI)")
     return findings
 
 
@@ -211,9 +211,9 @@ def _http_findings(report: HttpReport) -> list[tuple[str, str]]:
     cookies = report.headers.get("Set-Cookie", "")
     if cookies:
         if "secure" not in cookies.lower():
-            findings.append(("medium", "Cookie sin el atributo Secure"))
+            findings.append(("medium", "Cookie without the Secure attribute"))
         if "httponly" not in cookies.lower():
-            findings.append(("low", "Cookie sin el atributo HttpOnly"))
+            findings.append(("low", "Cookie without the HttpOnly attribute"))
 
     return findings
 
@@ -237,8 +237,8 @@ def audit_device(device: Device) -> list[SecurityFinding]:
     if device.mac_address and not device.vendor:
         findings.append(
             SecurityFinding(
-                "info", "MAC sin fabricante",
-                "Prefijo OUI no registrado (posiblemente aleatorizada)", device.ip_address,
+                "info", "MAC without vendor",
+                "Unregistered OUI prefix (probably a randomised MAC)", device.ip_address,
             )
         )
 
@@ -246,7 +246,7 @@ def audit_device(device: Device) -> list[SecurityFinding]:
         if port.is_open and port.number in (443, 8443):
             tls = inspect_tls(device.ip_address, port.number)
             for issue in tls.findings:
-                severity = "high" if "EXPIRADO" in issue or "obsoleto" in issue else "info"
+                severity = "high" if "EXPIRED" in issue or "Obsolete" in issue else "info"
                 findings.append(
                     SecurityFinding(severity, f"TLS/{port.number}", issue, device.ip_address)
                 )

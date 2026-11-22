@@ -1,29 +1,29 @@
-# IP Inspector Escaner de Red y Puertos
+# IP Inspector Network and Port Scanner
 
-## Acerca de
+## About
 
-Aplicacion de escritorio para Windows que escanea la red local, detecta dispositivos conectados, revisa puertos TCP abiertos, identifica modelo y sistema operativo de cada equipo y audita su configuracion de seguridad. Proporciona visibilidad sobre los dispositivos presentes en una red local sin necesidad de instalar herramientas complejas ni montar un servidor. Ejecucion local en Windows con Python 3.13, sin envio de datos a servidores externos.
+A Windows desktop application that scans the local network, discovers connected devices, checks open TCP ports, identifies each device's model and operating system and audits its security posture. It gives visibility over the devices on a local network without installing complex tools or running a server. Runs locally on Windows with Python, with no data sent to external servers.
 
-## Caracteristicas principales
+## Main features
 
-- Network Scan: descubrimiento de equipos y sondeo de puertos TCP del 1 al 1024, incluida deteccion de IPs de VPN.
-- Security Audit: revision de TLS y HTTP de cada equipo con puntuacion de riesgo.
-- Herramientas de red: DNS, WHOIS, traceroute, calculo de subredes y grafica de latencia.
-- Inventario: almacenamiento de escaneos previos y comparacion con linea base.
-- Monitor: revision periodica de disponibilidad de equipos en la red.
-- Interfaz bilingue (espanol/ingles) con cambio en caliente e informes PDF y HTML.
+- Network scan: host discovery and TCP port scanning with six profiles (Quick, Standard, Full, IoT, Ping sweep, Custom), including VPN subnets.
+- Security audit: exposure findings and a risk score per device, TLS and HTTP header checks.
+- Network tools: ping, traceroute, port check, DNS, WHOIS, mail security, subnet calculator, ARP table, listening ports, Wake-on-LAN.
+- Change detection: new devices are flagged against earlier scans; favorites are remembered.
+- Monitor: continuous availability checks with uptime statistics and alerts.
+- CSV / JSON export and HTML / PDF reports; light and dark themes.
 
-## Stack tecnologico
+## Technology stack
 
-| Categoria | Tecnologia |
-|-----------|------------|
-| Lenguaje | Python 3.13+ |
+| Category | Technology |
+|----------|------------|
+| Language | Python 3.10+ |
 | GUI | CustomTkinter |
-| Red | scapy, psutil, mac-vendor-lookup |
-| Empaquetado | PyInstaller |
-| Sistema operativo | Windows |
+| Networking | scapy, psutil, mac-vendor-lookup |
+| Packaging | PyInstaller |
+| Operating system | Windows |
 
-## Creditos
+## Credits
 
-Desarrollado por: Matthew Ilveneff Garay Perez
-Correo Electronico: 1911.garay.perez@gmail.com
+Developed by: Matthew Ilveneff Garay Perez
+Email: 1911.garay.perez@gmail.com

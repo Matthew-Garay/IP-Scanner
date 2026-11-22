@@ -53,9 +53,9 @@ def run_command(command: list[str], timeout: float = 20.0) -> tuple[int, str, st
         )
         return completed.returncode, completed.stdout, completed.stderr
     except FileNotFoundError:
-        return 127, "", f"{command[0]} no esta instalado en el sistema"
+        return 127, "", f"{command[0]} is not installed on this system"
     except subprocess.TimeoutExpired:
-        return 124, "", f"{command[0]} supero {timeout:.0f}s"
+        return 124, "", f"{command[0]} exceeded {timeout:.0f}s"
     except OSError as exc:
         return 1, "", str(exc)
 
