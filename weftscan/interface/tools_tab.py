@@ -345,7 +345,7 @@ class ToolsTab(ttk.Frame):
         path = filedialog.asksaveasfilename(
             title="Save tool output", defaultextension=".txt",
             filetypes=[("Text", "*.txt"), ("Log", "*.log")],
-            initialfile=f"ip_scanner_tools_{datetime.now():%Y%m%d_%H%M}",
+            initialfile=f"weftscan_tools_{datetime.now():%Y%m%d_%H%M}",
         )
         if not path:
             return

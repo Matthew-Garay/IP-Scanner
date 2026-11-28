@@ -215,7 +215,7 @@ def fetch_upnp_description(location: str, timeout: float = DESCRIPTION_TIMEOUT) 
     if not location.lower().startswith("http://"):
         return info
     try:
-        request = urllib.request.Request(location, headers={"User-Agent": "IP-Scanner/2"})
+        request = urllib.request.Request(location, headers={"User-Agent": "WeftScan/1.0"})
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
             body = response.read(65536)
     except Exception:  # noqa: BLE001 - a description is a nicety

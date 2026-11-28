@@ -8,8 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ip_scanner.nettools import profiles
-from ip_scanner.nettools.profiles import PROFILES, get_profile, parse_ports
+from weftscan.nettools import profiles
+from weftscan.nettools.profiles import PROFILES, get_profile, parse_ports
 
 
 class PortParsing(unittest.TestCase):
@@ -59,7 +59,7 @@ class SettingsFile(unittest.TestCase):
 
     def test_round_trip_and_bad_files(self):
         try:
-            from ip_scanner.interface.settings import Settings
+            from weftscan.interface.settings import Settings
         except Exception as exc:  # pragma: no cover - no tkinter
             self.skipTest(str(exc))
         with tempfile.TemporaryDirectory() as folder:
@@ -74,12 +74,36 @@ class SettingsFile(unittest.TestCase):
             loaded = Settings.load(path)
             self.assertEqual((loaded.threads, loaded.profile), (1000, "iot"))
 
+    def test_settings_from_the_old_names_are_picked_up(self):
+        try:
+            from weftscan.interface import settings
+        except Exception as exc:  # pragma: no cover - no tkinter
+            self.skipTest(str(exc))
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            current = home / ".weftscan" / "settings.json"
+            ip_scanner = home / ".ip_scanner" / "settings.json"
+            ip_inspector = home / ".ip_inspector" / "settings.json"
+            for path, profile in ((ip_scanner, "full"), (ip_inspector, "iot")):
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps({"profile": profile}), encoding="utf-8")
+            with mock.patch.multiple(settings, SETTINGS_FILE=current,
+                                     _DEFAULT_SETTINGS_FILE=current,
+                                     LEGACY_SETTINGS_FILES=(ip_scanner, ip_inspector)):
+                # The most recent old name wins.
+                self.assertEqual(settings.Settings.load().profile, "full")
+                # Once WeftScan has saved its own file, that one is used.
+                settings.Settings(profile="quick").save()
+                self.assertEqual(settings.Settings.load().profile, "quick")
+
 
 class ToolsCatalogue(unittest.TestCase):
 
     def setUp(self):
         try:
-            from ip_scanner.interface import tools_tab
+            from weftscan.interface import tools_tab
         except Exception as exc:  # pragma: no cover - no tkinter
             self.skipTest(str(exc))
         self.tools_tab = tools_tab
@@ -130,7 +154,7 @@ class SharesAndPower(unittest.TestCase):
     )
 
     def test_net_view_is_parsed_in_any_language(self):
-        from ip_scanner.nettools.tools import parse_net_view
+        from weftscan.nettools.tools import parse_net_view
         self.assertEqual(parse_net_view(self.SPANISH), [
             ("ADMIN$", "Disco", "Remote Admin"), ("Public Files", "Disco", ""),
             ("IPC$", "IPC", "Remote IPC")])
@@ -138,17 +162,17 @@ class SharesAndPower(unittest.TestCase):
             ("media", "Disk", "Movies and music"), ("printer", "Print", "Office laser")])
 
     def test_net_view_without_shares(self):
-        from ip_scanner.nettools.tools import parse_net_view
+        from weftscan.nettools.tools import parse_net_view
         self.assertEqual(parse_net_view("System error 53 has occurred.\n"), [])
 
     def test_remote_power_rejects_unknown_actions(self):
-        from ip_scanner.actions.menu import remote_power
+        from weftscan.actions.menu import remote_power
         ok, message = remote_power("10.0.0.1", "explode")
         self.assertFalse(ok)
 
     def test_saved_json_round_trips(self):
-        from ip_scanner.actions.exporter import device_to_dict, export_json, load_json
-        from ip_scanner.core.models import Device, Port, SecurityFinding
+        from weftscan.actions.exporter import device_to_dict, export_json, load_json
+        from weftscan.core.models import Device, Port, SecurityFinding
         device = Device(ip_address="10.0.0.1", mac_address="aa:bb:cc:dd:ee:ff",
                         hostname="x", open_ports=[Port(80, "open", "HTTP", banner="b")],
                         risk_score=12)
@@ -171,7 +195,7 @@ class BannerCleaning(unittest.TestCase):
         import socket
         import threading
 
-        from ip_scanner.core.network import NetworkScanner
+        from weftscan.core.network import NetworkScanner
 
         server = socket.socket()
         server.bind(("127.0.0.1", 0))

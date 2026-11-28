@@ -283,7 +283,7 @@ def build_pdf(
 
     # -- cover band ------------------------------------------------------
     writer.rect(0, PAGE_HEIGHT - 92, PAGE_WIDTH, 92, *brand)
-    writer.text(MARGIN_X, PAGE_HEIGHT - 44, "IP Scanner", HELVETICA_BOLD, 22, 1.0)
+    writer.text(MARGIN_X, PAGE_HEIGHT - 44, "WeftScan", HELVETICA_BOLD, 22, 1.0)
     writer.text(MARGIN_X, PAGE_HEIGHT - 64,
                 i18n.t("report.subtitle"), HELVETICA, 10, 1.0)
     writer.text(MARGIN_X, PAGE_HEIGHT - 80,
@@ -332,7 +332,7 @@ def build_pdf(
         writer._current = page
         writer.rule(MARGIN_X, MARGIN_TOP - 18, PAGE_WIDTH - MARGIN_X * 2, *RULE)
         writer.text(MARGIN_X, MARGIN_TOP - 30,
-                    f"IP Scanner - {now:%Y-%m-%d %H:%M}", HELVETICA, 7, *soft)
+                    f"WeftScan - {now:%Y-%m-%d %H:%M}", HELVETICA, 7, *soft)
 
     return writer.save(path)
 
@@ -410,7 +410,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="{lang}">
 <head>
 <meta charset="utf-8">
-<title>IP Scanner - {title}</title>
+<title>WeftScan - {title}</title>
 <style>
   :root {{ color-scheme: light; }}
   body {{ margin: 0; padding: 28px 32px; background: {bg};
@@ -438,7 +438,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 </style>
 </head>
 <body>
-<h1>IP Scanner</h1>
+<h1>WeftScan</h1>
 <div class="sub">{subtitle} &middot; {generated}{range}{vpn_line}</div>
 <div class="kpis">{kpis}</div>
 <h2>{inventory_title}</h2>

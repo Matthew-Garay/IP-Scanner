@@ -84,7 +84,7 @@ POWER_ACTIONS: dict[str, list[str]] = {
 
 
 def remote_power(ip: str, action: str, delay: int = 30,
-                 message: str = "Scheduled from IP Scanner") -> tuple[bool, str]:
+                 message: str = "Scheduled from WeftScan") -> tuple[bool, str]:
     """
     Shut down, restart, or cancel a pending shutdown of a Windows computer.
 

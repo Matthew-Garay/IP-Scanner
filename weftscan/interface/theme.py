@@ -1,4 +1,4 @@
-"""Visual system of IP Scanner: colour tokens, ttk styles and icons.
+"""Visual system of WeftScan: colour tokens, ttk styles and icons.
 
 Design notes
 ------------

@@ -1,5 +1,5 @@
 """
-Main window of IP Scanner, built on native Windows controls (ttk).
+Main window of WeftScan, built on native Windows controls (ttk).
 
 Layout
 ------
@@ -93,7 +93,7 @@ __all__ = [
     "TREE_COLUMNS", "device_row", "matches_filter",
 ]
 
-APP_NAME = "IP Scanner"
+APP_NAME = "WeftScan"
 APP_AUTHOR = "Matthew Garay"
 APP_VERSION = "2.1"
 
@@ -1606,7 +1606,7 @@ class ScannerApp(tk.Tk):
         path = filedialog.asksaveasfilename(
             parent=self, title="Save results as", defaultextension=".csv",
             filetypes=[("CSV (Excel)", "*.csv"), ("JSON (can be reopened)", "*.json")],
-            initialfile=f"ip_scanner_{datetime.now():%Y%m%d_%H%M}",
+            initialfile=f"weftscan_{datetime.now():%Y%m%d_%H%M}",
         )
         if not path:
             return
@@ -1624,7 +1624,7 @@ class ScannerApp(tk.Tk):
         if self._scanning:
             return
         path = filedialog.askopenfilename(
-            parent=self, title="Open results", filetypes=[("IP Scanner results", "*.json")])
+            parent=self, title="Open results", filetypes=[("WeftScan results", "*.json")])
         if path:
             self.load_results(path)
 
@@ -1695,7 +1695,7 @@ class ScannerApp(tk.Tk):
             program, params = sys.executable, ""
         else:
             program = sys.executable
-            params = "-m ip_scanner.main"
+            params = "-m weftscan.main"
         cwd = str(Path(__file__).resolve().parents[2])
         try:
             code = ctypes.windll.shell32.ShellExecuteW(None, "runas", program, params, cwd, 1)
@@ -1730,7 +1730,7 @@ class ScannerApp(tk.Tk):
             "Ctrl+F Search, Ctrl+D Changes, F8 Options, F9 Properties, "
             "Ctrl+O Open results, Ctrl+S Save results, Ctrl+P Report.\n\n"
             "Command line\n"
-            "  python -m ip_scanner 192.168.1.0/24 -p quick", parent=self)
+            "  python -m weftscan 192.168.1.0/24 -p quick", parent=self)
 
     # ------------------------------------------------------------------ #
     # Lifecycle

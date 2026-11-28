@@ -4,10 +4,10 @@ import inspect
 import ipaddress
 import unittest
 
-from ip_scanner.core import network
-from ip_scanner.core.models import SCAN_PORTS, ScanRequest
-from ip_scanner.core.network import NetworkScanner
-from ip_scanner.core.utils import (
+from weftscan.core import network
+from weftscan.core.models import SCAN_PORTS, ScanRequest
+from weftscan.core.network import NetworkScanner
+from weftscan.core.utils import (
     MAX_TARGETS,
     _is_sweepable,
     clamp_to_sweep,

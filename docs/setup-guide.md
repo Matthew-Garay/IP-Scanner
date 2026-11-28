@@ -1,6 +1,6 @@
-# Setup Guide - IP Scanner
+# Setup Guide - WeftScan
 
-This guide helps you install and run IP Scanner locally.
+This guide helps you install and run WeftScan locally.
 
 ## Prerequisites
 
@@ -13,8 +13,8 @@ This guide helps you install and run IP Scanner locally.
 
 1. Clone the repository:
    ```powershell
-   git clone https://github.com/Matthew-Garay/IP-Scanner.git
-   cd IP-Scanner
+   git clone https://github.com/Matthew-Garay/WeftScan.git
+   cd WeftScan
    ```
 
 2. Create and activate a virtual environment:
@@ -30,7 +30,7 @@ This guide helps you install and run IP Scanner locally.
 
 4. Run the application (ideally from an administrator terminal):
    ```powershell
-   python -m ip_scanner.main
+   python -m weftscan.main
    ```
 
 ## First scan
@@ -53,8 +53,8 @@ python -m unittest discover -s tests -t . -v
 
 ```powershell
 pip install pyinstaller
-pyinstaller IP_Scanner.spec
-# Output: dist\IP_Scanner.exe
+pyinstaller WeftScan.spec
+# Output: dist\WeftScan.exe
 ```
 
 ## Troubleshooting

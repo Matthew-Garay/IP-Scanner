@@ -14,13 +14,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ip_scanner.core.models import Device, Port, ScannerEvent
+from weftscan.core.models import Device, Port, ScannerEvent
 
 try:
-    from ip_scanner.interface import settings as settings_module
-    from ip_scanner.interface import ui
-    from ip_scanner.interface.settings import Settings
-    from ip_scanner.interface.widgets import COL_PORTS
+    from weftscan.interface import settings as settings_module
+    from weftscan.interface import ui
+    from weftscan.interface.settings import Settings
+    from weftscan.interface.widgets import COL_PORTS
     _GUI = True
 except Exception:  # pragma: no cover - no tkinter, no interface
     _GUI = False
@@ -76,7 +76,7 @@ class EventContract(WindowTestCase):
     def test_phases_match_the_engine(self):
         """The constants must be the strings core/network.py emits."""
         import inspect
-        from ip_scanner.core import network
+        from weftscan.core import network
         source = inspect.getsource(network)
         for phase in (ui.PHASE_DEVICE, ui.PHASE_FINISHED, ui.PHASE_CANCELLED,
                       ui.PHASE_ERROR, *ui.PROGRESS_PHASES):
@@ -362,7 +362,7 @@ class NativeWindow(WindowTestCase):
         self.assertEqual(str(open_with.entrycget("Remote Desktop (RDP)", "state")), "disabled")
 
     def test_saved_results_can_be_reopened(self):
-        from ip_scanner.actions.exporter import export_json
+        from weftscan.actions.exporter import export_json
         path = Path(self._tmp.name) / "results.json"
         export_json([_device("10.0.0.8", "printer", (9100,))], path,
                     {"range": "10.0.0.0/24"})

@@ -13,9 +13,9 @@ import threading
 import unittest
 from pathlib import Path
 
-from ip_scanner import cli
-from ip_scanner.core.models import Device, Port, ScannerEvent, ScanRequest
-from ip_scanner.core.network import NetworkScanner
+from weftscan import cli
+from weftscan.core.models import Device, Port, ScannerEvent, ScanRequest
+from weftscan.core.network import NetworkScanner
 
 
 class FakeScanner:

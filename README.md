@@ -1,10 +1,10 @@
-# IP Scanner Network and Port Scanner
+# WeftScan Network and Port Scanner
 
 ![Devices view showing a sample office network](docs/screenshots/devices.png)
 
 ## A. Project Title and Executive Summary
 
-IP Scanner is a Windows desktop application that scans the local network, discovers connected devices, works out what each one is (computer, phone, printer, camera, TV, router...), checks open TCP ports, identifies models and operating systems, and audits each device's security posture. It also bundles everyday network diagnostics (ping, traceroute, DNS, WHOIS, TLS, subnet maths…) and a continuous host monitor. The problem it solves is giving visibility over the devices on a local network without installing complex tools or running a server. Its technological scope is local execution on Windows with Python 3.10+, with no data sent to external servers.
+WeftScan is a Windows desktop application that scans the local network, discovers connected devices, works out what each one is (computer, phone, printer, camera, TV, router...), checks open TCP ports, identifies models and operating systems, and audits each device's security posture. It also bundles everyday network diagnostics (ping, traceroute, DNS, WHOIS, TLS, subnet maths…) and a continuous host monitor. The problem it solves is giving visibility over the devices on a local network without installing complex tools or running a server. Its technological scope is local execution on Windows with Python 3.10+, with no data sent to external servers.
 
 ## B. System Architecture
 
@@ -27,7 +27,7 @@ The program follows a layered architecture where each layer only imports from th
 - **Monitor tab:** continuous reachability checks with latency, uptime, loss statistics, an event log and an alert sound when a host goes down.
 - **Files:** save results as CSV or JSON, **reopen saved JSON results** later (File › Open results), and HTML / PDF security reports.
 - Remembers window size and position, recent address ranges and options; keyboard shortcuts for every main action.
-- No persistent database and no network protocol of its own beyond local scanning; preferences live in `~/.ip_scanner/settings.json`.
+- No persistent database and no network protocol of its own beyond local scanning; preferences live in `~/.weftscan/settings.json`.
 - Responsible use: the tool probes other machines and must only be used with permission.
 
 ## D. Technology Stack Specification
@@ -51,8 +51,8 @@ The program follows a layered architecture where each layer only imports from th
 ### Clone and install
 
 ```powershell
-git clone https://github.com/Matthew-Garay/IP-Scanner.git
-cd IP-Scanner
+git clone https://github.com/Matthew-Garay/WeftScan.git
+cd WeftScan
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -65,7 +65,7 @@ This project needs no .env file or environment variables.
 ### Running in development
 
 ```powershell
-python -m ip_scanner.main
+python -m weftscan.main
 ```
 
 ### Try it without scanning
@@ -77,15 +77,15 @@ Open `docs/sample-results.json` with **File › Open results** to explore the in
 ### Command-line mode
 
 ```powershell
-python -m ip_scanner 192.168.1.0/24 -p quick          # scan and print a table
-python -m ip_scanner 10.0.0.1-50 --ports 22,80,443,8000-8100
-python -m ip_scanner -o results.csv -o results.json   # local network, save both
-python -m ip_scanner 192.168.1.0/24 --fail-on-risk 40 # exit code 3 if a host is risky
-python -m ip_scanner --list-profiles
-python -m ip_scanner --help
+python -m weftscan 192.168.1.0/24 -p quick          # scan and print a table
+python -m weftscan 10.0.0.1-50 --ports 22,80,443,8000-8100
+python -m weftscan -o results.csv -o results.json   # local network, save both
+python -m weftscan 192.168.1.0/24 --fail-on-risk 40 # exit code 3 if a host is risky
+python -m weftscan --list-profiles
+python -m weftscan --help
 ```
 
-Without arguments, `python -m ip_scanner` opens the window.
+Without arguments, `python -m weftscan` opens the window.
 
 ### Keyboard shortcuts
 
@@ -110,7 +110,7 @@ python -m unittest discover -s tests -t . -v
 
 ```powershell
 pip install pyinstaller
-pyinstaller IP_Scanner.spec   # -> dist\IP_Scanner.exe
+pyinstaller WeftScan.spec   # -> dist\WeftScan.exe
 ```
 
 ## F. Authorship Credits

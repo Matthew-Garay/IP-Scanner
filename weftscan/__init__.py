@@ -1,4 +1,4 @@
-"""IP Scanner - network discovery, port analysis and security auditing.
+"""WeftScan - network discovery, port analysis and security auditing.
 
 Layout
 ------
@@ -15,8 +15,8 @@ below it:
 
 Public surface::
 
-    from ip_scanner import NetworkScanner, ScanRequest, Device
-    from ip_scanner import tools, audit
+    from weftscan import NetworkScanner, ScanRequest, Device
+    from weftscan import tools, audit
 
 The user interface is deliberately *not* imported here, so headless
 consumers of the scanning core do not pay for the tkinter import.

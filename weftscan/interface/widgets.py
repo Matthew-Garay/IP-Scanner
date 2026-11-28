@@ -10,7 +10,7 @@
 * :class:`CheckBox`     - ttk.Checkbutton with ``get``/``select``/``deselect``.
 
 Nothing here knows about scanning; the widgets only render
-:class:`~ip_scanner.core.models.Device` records handed to them.
+:class:`~weftscan.core.models.Device` records handed to them.
 """
 
 from __future__ import annotations

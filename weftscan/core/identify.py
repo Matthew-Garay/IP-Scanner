@@ -90,7 +90,7 @@ BANNER_PORTS = frozenset({21, 22, 23, 25, 80, 110, 143, 443, 587, 8000,
 #: closes cleanly on its own and needs no second exchange.
 _HTTP_PROBE = (
     b"HEAD / HTTP/1.0\r\nHost: probe\r\n"
-    b"User-Agent: ip-scanner\r\nAccept: */*\r\n\r\n"
+    b"User-Agent: weftscan\r\nAccept: */*\r\n\r\n"
 )
 
 #: Services that stay silent until spoken to, with the smallest thing that
@@ -275,7 +275,7 @@ def probe_http_identity(ip: str, port: int, timeout: float = 1.5) -> tuple[str, 
             break
         request = urllib.request.Request(
             f"{scheme}://{ip}:{port}{path}",
-            headers={"User-Agent": "IP-Scanner/1.0"},
+            headers={"User-Agent": "WeftScan/1.0"},
         )
         try:
             with opener.open(request, timeout=remaining) as response:
@@ -385,7 +385,7 @@ def probe_device_description(ip: str, port: int, timeout: float = 2.0) -> dict:
     for path in DEVICE_DESCRIPTION_PATHS:
         try:
             request = urllib.request.Request(
-                base + path, headers={"User-Agent": "IP-Scanner/1.0"}
+                base + path, headers={"User-Agent": "WeftScan/1.0"}
             )
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 body = response.read(8192).decode("utf-8", errors="replace")

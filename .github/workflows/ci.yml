@@ -26,11 +26,11 @@ jobs:
 
       - name: Run tests
         run: |
-          python -m pytest tests/ -v --cov=ip_scanner --cov-report=term
+          python -m pytest tests/ -v --cov=weftscan --cov-report=term
 
       - name: Check project structure
         shell: bash
         run: |
-          test -f ip_scanner/main.py && echo "ip_scanner/main.py present" || exit 1
+          test -f weftscan/main.py && echo "weftscan/main.py present" || exit 1
           test -f requirements.txt && echo "requirements.txt present" || exit 1
           test -f README.md && echo "README.md present" || exit 1

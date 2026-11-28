@@ -111,7 +111,7 @@ class Device:
     response_time_ms: float | None = None
     discovery_method: str = ""
     #: What kind of thing this is ("computer", "printer"...), see
-    #: :mod:`ip_scanner.core.devicetype`. Drives the icon and grouping.
+    #: :mod:`weftscan.core.devicetype`. Drives the icon and grouping.
     category: str = ""
     #: Extra facts the device announced (friendly name, UPnP server, mDNS
     #: services...), shown as-is in the details panel.
@@ -370,7 +370,7 @@ class SubnetInfo:
     """
     Full arithmetic of one CIDR block.
 
-    Produced by :mod:`ip_scanner.tools` so the calculator can paint a
+    Produced by :mod:`weftscan.tools` so the calculator can paint a
     widget per field instead of parsing its own text output.
     """
 
@@ -477,7 +477,7 @@ SEVERITY_LABELS: dict[str, str] = {
 
 #: Text fallback per device class, kept for the reports and the exporters,
 #: which write plain text and cannot carry a drawing. The table draws real
-#: pictograms instead (see :mod:`ip_scanner.interface.theme`), because these
+#: pictograms instead (see :mod:`weftscan.interface.theme`), because these
 #: glyphs are so alike that a desktop, a server and a switch read the same.
 DEVICE_TYPE_ICONS: dict[str, str] = {
     "Router": "◈",            # diamond: the thing everything routes through

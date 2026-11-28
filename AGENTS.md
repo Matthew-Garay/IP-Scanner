@@ -1,4 +1,4 @@
-# IP Scanner — notes for contributors and coding agents
+# WeftScan — notes for contributors and coding agents
 
 Windows desktop app that scans the local network: discovers devices, checks
 open ports, identifies model and operating system, scores security exposure,
@@ -10,11 +10,11 @@ Tkinter/ttk from the standard library.
 ## Layout
 
 ```
-IP_Scanner.spec      PyInstaller spec (relative paths): pyinstaller IP_Scanner.spec
+WeftScan.spec      PyInstaller spec (relative paths): pyinstaller WeftScan.spec
 requirements.txt
 README.md / ABOUT.md / ARCHITECTURE.md / AGENTS.md
 docs/setup-guide.md
-ip_scanner/
+weftscan/
   core/        models, utils, ping, hostnames, identify, network (NetworkScanner)
   analysis/    audit (TLS/HTTP), exposure (risk heuristics), report (HTML/PDF)
   actions/     exporter (CSV/JSON), menu (web/RDP/WoL), wol
@@ -59,8 +59,8 @@ touch the user's preferences.
 
 ## Commands
 
-- Run: `python -m ip_scanner.main` (run as administrator for the full ARP sweep).
-- Build: `pyinstaller IP_Scanner.spec` → `dist/IP_Scanner.exe`.
+- Run: `python -m weftscan.main` (run as administrator for the full ARP sweep).
+- Build: `pyinstaller WeftScan.spec` → `dist/WeftScan.exe`.
 - The spec points at `launcher.py`, not `main.py`, because PyInstaller does
   not resolve the relative imports of `main.py`. New modules must be added to
   `hiddenimports` in the spec.

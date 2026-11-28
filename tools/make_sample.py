@@ -16,9 +16,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ip_scanner.actions.exporter import export_json  # noqa: E402
-from ip_scanner.analysis.exposure import exposure_findings, exposure_score  # noqa: E402
-from ip_scanner.core.models import KNOWN_SERVICES, Device, Port  # noqa: E402
+from weftscan.actions.exporter import export_json  # noqa: E402
+from weftscan.analysis.exposure import exposure_findings, exposure_score  # noqa: E402
+from weftscan.core.models import KNOWN_SERVICES, Device, Port  # noqa: E402
 
 NET = "192.168.50"
 

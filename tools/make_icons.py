@@ -6,7 +6,7 @@ Run from the repository root whenever an icon changes::
     pip install pillow
     python tools/make_icons.py
 
-The app itself only loads the PNGs this writes to ``ip_scanner/assets/icons``;
+The app itself only loads the PNGs this writes to ``weftscan/assets/icons``;
 Pillow is a design-time tool, not a runtime dependency.
 
 All glyphs are drawn on a 64-unit grid with one stroke weight, rendered at
@@ -21,7 +21,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-OUT = Path(__file__).resolve().parents[1] / "ip_scanner" / "assets" / "icons"
+OUT = Path(__file__).resolve().parents[1] / "weftscan" / "assets" / "icons"
 GRID = 64
 OVERSAMPLE = 8
 CANVAS = GRID * OVERSAMPLE

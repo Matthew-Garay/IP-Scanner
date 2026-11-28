@@ -1,6 +1,6 @@
 """Turning findings into meaning: risk, exposure and written reports.
 
-Sits above :mod:`ip_scanner.core`, which it reads from, and below the
+Sits above :mod:`weftscan.core`, which it reads from, and below the
 interface, which renders it.
 
     audit     - TLS, HTTP posture and per-device risk scoring

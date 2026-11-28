@@ -1,7 +1,7 @@
 """The Tools and Quick Tools tabs: standalone diagnostics and monitoring.
 
-Reads from :mod:`ip_scanner.core`. The ping probes it shares with the
-scanner live in ``ip_scanner.core.ping`` so the engine never has to reach
+Reads from :mod:`weftscan.core`. The ping probes it shares with the
+scanner live in ``weftscan.core.ping`` so the engine never has to reach
 into this layer.
 
     tools     - DNS, WHOIS, traceroute, subnet maths, local exposure

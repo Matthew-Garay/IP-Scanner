@@ -2,11 +2,11 @@
 
 Examples::
 
-    python -m ip_scanner.cli                         # local network, Standard profile
-    python -m ip_scanner.cli 192.168.1.0/24 -p quick
-    python -m ip_scanner.cli 10.0.0.1-50 --ports 22,80,443,8000-8100
-    python -m ip_scanner.cli 192.168.1.0/24 -o results.csv -o results.json
-    python -m ip_scanner.cli --list-profiles
+    python -m weftscan.cli                         # local network, Standard profile
+    python -m weftscan.cli 192.168.1.0/24 -p quick
+    python -m weftscan.cli 10.0.0.1-50 --ports 22,80,443,8000-8100
+    python -m weftscan.cli 192.168.1.0/24 -o results.csv -o results.json
+    python -m weftscan.cli --list-profiles
 
 Exit codes: 0 success, 1 scan error or nothing to scan, 2 bad arguments,
 130 interrupted. ``--fail-on-risk N`` exits 3 when any device scores N or
@@ -43,7 +43,7 @@ PHASE_TEXT = {
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="ip_scanner",
+        prog="weftscan",
         description="Scan a network for devices and open ports.",
         epilog="Only scan networks you own or are authorised to test.",
     )

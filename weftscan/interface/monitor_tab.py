@@ -1,6 +1,6 @@
 """The Monitor tab: keep pinging chosen hosts and alert on state changes.
 
-The polling itself lives in :class:`ip_scanner.nettools.monitor.Monitor`,
+The polling itself lives in :class:`weftscan.nettools.monitor.Monitor`,
 which runs on its own thread and reports through a queue. This tab only
 adds and removes hosts, refreshes the grid once a second and logs the
 transitions.

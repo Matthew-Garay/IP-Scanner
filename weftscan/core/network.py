@@ -66,7 +66,7 @@ logger = logging.getLogger(__name__)
 #: Upper bound on targets per ARP batch, protecting against /8 mishaps.
 MAX_ARP_BATCH = 4096
 
-#: Name resolution lives in :mod:`ip_scanner.hostnames`, and that is where
+#: Name resolution lives in :mod:`weftscan.hostnames`, and that is where
 #: the scan is really bounded. This constant used to claim a per-lookup limit
 #: that never existed: the OS resolver ignores the socket timeout, so a dead
 #: address blocked for seconds anyway.

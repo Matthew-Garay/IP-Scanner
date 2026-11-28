@@ -7,15 +7,15 @@ documents shaped like the real ones captured on a LAN.
 import struct
 import unittest
 
-from ip_scanner.core import devicetype as dt
-from ip_scanner.core.discovery import (
+from weftscan.core import devicetype as dt
+from weftscan.core.discovery import (
     DeviceInfo,
     parse_mdns_response,
     parse_upnp_description,
 )
-from ip_scanner.core.hostnames import _encode_name
-from ip_scanner.core.models import Device, Port
-from ip_scanner.core.network import apply_announcement
+from weftscan.core.hostnames import _encode_name
+from weftscan.core.models import Device, Port
+from weftscan.core.network import apply_announcement
 
 
 def _device(ip="10.0.0.5", ports=(), **fields):

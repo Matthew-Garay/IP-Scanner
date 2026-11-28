@@ -178,7 +178,7 @@ def audit_http(url: str, timeout: float = 6.0) -> HttpReport:
     started = time.perf_counter()
 
     request = urllib.request.Request(
-        url, method="GET", headers={"User-Agent": "IP-Scanner/1.0"}
+        url, method="GET", headers={"User-Agent": "WeftScan/1.0"}
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:

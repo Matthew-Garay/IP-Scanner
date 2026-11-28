@@ -1,6 +1,6 @@
 """User preferences and small persistent state, stored as JSON.
 
-Everything lives in ``~/.ip_scanner/``: a corrupt or missing file simply
+Everything lives in ``~/.weftscan/``: a corrupt or missing file simply
 means defaults, never a crash at start-up.
 """
 
@@ -13,18 +13,23 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path.home() / ".ip_scanner"
+DATA_DIR = Path.home() / ".weftscan"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 _DEFAULT_SETTINGS_FILE = SETTINGS_FILE
-#: Where versions before the rename kept the same file. Read once, so
-#: favorites, device names and history survive the upgrade.
-LEGACY_SETTINGS_FILE = Path.home() / ".ip_inspector" / "settings.json"
+#: Where earlier versions (IP Scanner, IP Inspector) kept the same file,
+#: newest first. Read once, so favorites, device names and history survive
+#: the upgrade; the next save writes to ``SETTINGS_FILE``.
+LEGACY_SETTINGS_FILES = (
+    Path.home() / ".ip_scanner" / "settings.json",
+    Path.home() / ".ip_inspector" / "settings.json",
+)
 
 
 def _source_file() -> Path:
-    if (SETTINGS_FILE == _DEFAULT_SETTINGS_FILE and not SETTINGS_FILE.exists()
-            and LEGACY_SETTINGS_FILE.exists()):
-        return LEGACY_SETTINGS_FILE
+    if SETTINGS_FILE == _DEFAULT_SETTINGS_FILE and not SETTINGS_FILE.exists():
+        for legacy in LEGACY_SETTINGS_FILES:
+            if legacy.exists():
+                return legacy
     return SETTINGS_FILE
 
 

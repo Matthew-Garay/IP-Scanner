@@ -1,4 +1,4 @@
-# IP Scanner Network and Port Scanner
+# WeftScan Network and Port Scanner
 
 ## About
 

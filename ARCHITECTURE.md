@@ -1,12 +1,12 @@
-# IP Scanner Architecture
+# WeftScan Architecture
 
-IP Scanner is a desktop network scanner for Windows with a Tkinter/ttk
+WeftScan is a desktop network scanner for Windows with a Tkinter/ttk
 interface that uses the native Windows controls (the `vista` ttk theme). It runs fully offline and never sends data to any server.
 
 ## Layers
 
 ```
-ip_scanner/
+weftscan/
   core/        Domain models and the scanning engine (no UI, usable headless)
                discovery.py: SSDP/UPnP and mDNS listening; devicetype.py: categories
   analysis/    What the findings mean: exposure, risk score, TLS/HTTP audit, reports
@@ -14,9 +14,9 @@ ip_scanner/
   nettools/    Diagnostics (tools.py), continuous monitor, scan profiles
   interface/   Everything that touches tkinter
   i18n.py      Text catalogue (device types, findings); the app runs in English
-  main.py      Development entry point (python -m ip_scanner.main)
+  main.py      Development entry point (python -m weftscan.main)
   cli.py       Command-line scanner (headless: no tkinter import)
-  __main__.py  python -m ip_scanner: the window, or the CLI when given arguments
+  __main__.py  python -m weftscan: the window, or the CLI when given arguments
   launcher.py  PyInstaller entry point
 tests/         Regression tests (standard library only)
 tools/         Design-time scripts: make_icons.py (icon set, needs Pillow),
@@ -55,7 +55,7 @@ never drift apart again (that mismatch once kept every result off screen).
 | `interface/widgets.py` | `DeviceTree` (results grid), `AddressMap`, `DetailsPanel`, `ViewStack` (navigation rail) |
 | `interface/tools_tab.py` | Tools tab; every tool is one entry in the `TOOLS` table |
 | `interface/monitor_tab.py` | Monitor tab on top of `nettools/monitor.py` |
-| `interface/settings.py` | Preferences, favorites and known devices in `~/.ip_scanner/settings.json` |
+| `interface/settings.py` | Preferences, favorites and known devices in `~/.weftscan/settings.json` |
 | `interface/theme.py` | Colour tokens, flat ttk styles on `clam`, DPI scaling (`px`) and the icon loader |
 
 ## Adding a tool

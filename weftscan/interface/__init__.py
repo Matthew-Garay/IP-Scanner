@@ -7,6 +7,6 @@ never import.
     widgets      - results table (DeviceTree) and device detail panel
     tools_tab    - Tools tab: diagnostics declared in one TOOLS table
     monitor_tab  - Monitor tab: continuous reachability checks and alerts
-    settings     - user preferences persisted in ~/.ip_scanner/settings.json
+    settings     - user preferences persisted in ~/.weftscan/settings.json
     theme        - light and dark palettes
 """

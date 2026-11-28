@@ -1,21 +1,21 @@
-"""Application entry point for IP Scanner.
+"""Application entry point for WeftScan.
 
-Run it as ``python -m ip_scanner.main`` from the folder above this package,
-or as a plain script (``python ip_scanner/main.py``); both work.
+Run it as ``python -m weftscan.main`` from the folder above this package,
+or as a plain script (``python weftscan/main.py``); both work.
 """
 
 from __future__ import annotations
 
 import sys
 
-# Support "python main.py" as well as "python -m ip_scanner.main". This has
+# Support "python main.py" as well as "python -m weftscan.main". This has
 # to run before the relative import below, otherwise the import sees no parent
 # package and the fallback never gets a chance to establish one.
 if __package__ in (None, ""):
     import pathlib
 
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-    __package__ = "ip_scanner"
+    __package__ = "weftscan"
 
 import logging
 
@@ -39,5 +39,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     # The bootstrap above already established the parent package, so this
-    # works both as "python -m ip_scanner.main" and "python main.py".
+    # works both as "python -m weftscan.main" and "python main.py".
     sys.exit(main())
