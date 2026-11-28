@@ -104,9 +104,17 @@ Each category key matches an icon in `assets/icons/<key>_<size>.png`.
 
 ## Visual design
 
-White surfaces, black text and one blue accent (`#0063B1`) for the primary action, the current
-view, selection and the address map; neutral white and light-grey surfaces
-with hairline borders; Segoe UI with weight, not size, carrying hierarchy.
-Status colours (green, black for new, orange, red) appear only on the row
-badges and the map. Icons are outline glyphs on a 64-unit grid drawn by
-`tools/make_icons.py`.
+The identity comes from the name: the *weft* is the thread that runs across
+a loom. Its one memorable element is **the weave**, the address map drawn as
+a woven strip (one stitch per address, the thread passing over every other
+empty one, raised stitches for devices that answered). Everything around it
+stays quiet: white work surfaces on cool "loom steel" chrome (`#EEF0F4`),
+indigo-black ink (`#1B2033`) and one **indigo** accent (`#2B3F96`) for the
+primary action, the current view, selection and the weave, where devices
+that answered are indigo stitches. Status colours are natural dyes and appear
+only on the row badges and the weave: verdigris (online badge), weld (needs
+attention), madder (critical); new devices are ink.
+Bahnschrift, shipped with Windows, sets the wordmark and titles;
+Segoe UI sets everything you read. The app mark is a small piece of weave
+with one loose weld thread. Icons are outline glyphs on a 64-unit grid drawn
+by `tools/make_icons.py`.

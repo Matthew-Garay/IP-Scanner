@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.0
+
+- New name: **WeftScan** (package `weftscan`, `WeftScan.exe`, repository
+  Matthew-Garay/WeftScan). Settings from IP Scanner and IP Inspector are
+  picked up on first start.
+- New identity: indigo accent on cool grey, status colours taken from
+  textile dyes, Bahnschrift for the wordmark and titles, and an app mark
+  drawn as a piece of weave with one loose thread.
+- The address map is now the weave: one stitch per address, raised and
+  dyed where a device answered.
+
 ## 3.1
 
 - System colours: white surfaces, black text and lines, one blue accent.

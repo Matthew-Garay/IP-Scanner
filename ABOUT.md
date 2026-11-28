@@ -1,4 +1,6 @@
-# WeftScan Network and Port Scanner
+# WeftScan
+
+**See the whole weave of your network.**
 
 ## About
 

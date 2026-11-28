@@ -17,18 +17,34 @@ family.
 from __future__ import annotations
 
 import math
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-OUT = Path(__file__).resolve().parents[1] / "weftscan" / "assets" / "icons"
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from weftscan.interface.theme import PALETTE  # noqa: E402
+
+OUT = ROOT / "weftscan" / "assets" / "icons"
 GRID = 64
 OVERSAMPLE = 8
 CANVAS = GRID * OVERSAMPLE
 
-INK = (32, 32, 32, 255)          # #202020  line colour (black)
-ACCENT = (0, 99, 177, 255)         # #0063B1  brand accent (blue)
-ACCENT_TINT = (221, 235, 247, 255)
+
+
+def rgba(hex_colour: str) -> tuple[int, int, int, int]:
+    """``#RRGGBB`` from the app palette as an opaque Pillow colour."""
+    value = hex_colour.lstrip("#")
+    return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16), 255
+
+
+# Colours come from the app's palette, so the PNGs follow theme.py.
+INK = rgba(PALETTE.ink)
+ACCENT = rgba(PALETTE.accent)
+ACCENT_TINT = rgba(PALETTE.accent_soft)
+WELD = (232, 170, 40, 255)          # a brighter weld for the loose thread in the mark
 WHITE = (255, 255, 255, 255)
 
 ROW_SIZES = (16, 20, 24, 32)
@@ -301,11 +317,13 @@ INTERFACE = {
 # --------------------------------------------------------------------------- #
 # Status badges (drawn into the corner of a device icon at runtime)
 # --------------------------------------------------------------------------- #
+# The palette's dyes: ok (verdigris), new (ink), warn (weld), danger
+# (madder). Favorites keep a gold star.
 BADGES = {
-    "online": (16, 124, 16, 255),
-    "new": (0, 0, 0, 255),
-    "risk": (216, 94, 0, 255),
-    "danger": (196, 43, 28, 255),
+    "online": rgba(PALETTE.ok),
+    "new": rgba(PALETTE.new),
+    "risk": rgba(PALETTE.warn),
+    "danger": rgba(PALETTE.danger),
     "favorite": (242, 169, 0, 255),
 }
 
@@ -329,27 +347,50 @@ def badge(colour, star: bool = False) -> Image.Image:
 
 
 def app_mark() -> Image.Image:
-    """Application icon: an address grid with some addresses in use.
+    """Application icon: a small piece of weave with one loose thread.
 
-    It echoes the address map in the main window, where every cell is one IP
-    of the scanned range and filled cells are devices that answered.
+    Three warp threads run down, three weft threads run across, passing
+    over and under each other. The last weft thread is dyed weld and stops
+    short: the loose thread WeftScan is there to find.
     """
     image = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
-    unit = CANVAS / GRID
-    draw.rounded_rectangle((2 * unit, 2 * unit, 62 * unit, 62 * unit), radius=13 * unit,
-                           fill=ACCENT)
-    used = {(0, 0), (1, 0), (3, 0), (1, 1), (2, 1), (0, 2), (2, 2), (3, 2), (1, 3), (3, 3)}
-    for row in range(4):
-        for column in range(4):
-            x0 = (12 + column * 10.5) * unit
-            y0 = (12 + row * 10.5) * unit
-            box = (x0, y0, x0 + 8 * unit, y0 + 8 * unit)
-            if (column, row) in used:
-                draw.rounded_rectangle(box, radius=1.6 * unit, fill=WHITE)
+    u = CANVAS / GRID
+    draw.rounded_rectangle((2 * u, 2 * u, 62 * u, 62 * u), radius=13 * u, fill=ACCENT)
+    warp = (163, 176, 226, 255)     # pale indigo: the threads running down
+    lanes = (20, 32, 44)            # centres of the threads, both directions
+    half = 3.4                      # half the thread width
+    edge = 1.8                      # gap that shows which thread is on top
+    lo, hi = 11, 53                 # where threads start and end
+    loose_end = 36                  # the loose thread stops here
+
+    def vertical(x, y0, y1, colour, pad=0.0):
+        draw.rectangle(((x - half - pad) * u, y0 * u, (x + half + pad) * u, y1 * u),
+                       fill=colour)
+
+    def horizontal(y, x0, x1, colour, pad=0.0):
+        draw.rectangle((x0 * u, (y - half - pad) * u, x1 * u, (y + half + pad) * u),
+                       fill=colour)
+
+    for x in lanes:
+        vertical(x, lo, hi, warp)
+    for row, y in enumerate(lanes):
+        loose = row == len(lanes) - 1
+        end = loose_end if loose else hi
+        colour = WELD if loose else WHITE
+        horizontal(y, lo, end, colour)
+        for column, x in enumerate(lanes):
+            if x - half > end:
+                continue
+            # At each crossing the thread on top is laid over a gap cut in
+            # the accent colour, which is what makes the weave read.
+            if (row + column) % 2:
+                for fill, pad in ((ACCENT, edge), (warp, 0.0)):
+                    vertical(x, y - half - edge, y + half + edge, fill, pad=pad)
             else:
-                draw.rounded_rectangle(box, radius=1.6 * unit, outline=(255, 255, 255, 150),
-                                       width=int(1.6 * unit))
+                x0, x1 = x - half - edge, min(end, x + half + edge)
+                for fill, pad in ((ACCENT, edge), (colour, 0.0)):
+                    horizontal(y, x0, x1, fill, pad=pad)
     return image
 
 

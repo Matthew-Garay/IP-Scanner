@@ -95,7 +95,7 @@ __all__ = [
 
 APP_NAME = "WeftScan"
 APP_AUTHOR = "Matthew Garay"
-APP_VERSION = "2.1"
+APP_VERSION = "4.0"
 
 WINDOW_SIZE = (1280, 760)
 WINDOW_MINIMUM = (900, 520)
@@ -732,9 +732,7 @@ class ScannerApp(tk.Tk):
         if self._map.visible:
             self._map.grid()
             self._map_caption.grid()
-            self._map_caption.configure(
-                text=f"Address map of {target}: one cell per address. Click a "
-                     f"filled cell to select that device.")
+            self._map_caption.configure(text=AddressMap.caption(target))
         else:
             self._map.grid_remove()
             self._map_caption.grid_remove()
@@ -752,9 +750,7 @@ class ScannerApp(tk.Tk):
         if text:
             self._map_caption.configure(text=text)
         elif self._map.visible:
-            self._map_caption.configure(
-                text="Address map: one cell per address. Click a filled cell to "
-                     "select that device.")
+            self._map_caption.configure(text=AddressMap.caption())
 
     def _select_from_map(self, ip: str) -> None:
         if self._tree.row_count() and ip not in self._tree.visible_ips():

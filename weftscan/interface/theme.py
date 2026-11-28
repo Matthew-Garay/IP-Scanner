@@ -2,14 +2,20 @@
 
 Design notes
 ------------
-* Neutral surfaces (white work areas on a light grey chrome) with hairline
-  borders, so the data is what stands out.
-* White, black and one blue accent. Blue is used only for the primary
-  action, the current navigation item, selection and the address map.
-  Status colours appear only where they carry meaning (online, needs
-  attention, critical); new devices are marked in black.
-* Segoe UI throughout: the Windows system face, at a small type scale
-  (9 / 10 / 13 pt) with weight, not size, carrying hierarchy.
+* The name comes from weaving: the *weft* is the thread that runs across
+  the loom. The address map is drawn as a woven strip and the colours are
+  those of natural textile dyes, so the identity lives in one memorable
+  element while the rest of the window stays quiet.
+* Cool "loom steel" chrome around white work surfaces, hairline borders, so
+  the data is what stands out.
+* One accent, **indigo**, used only for the primary action, the current
+  navigation item, selection and the weave, where devices that answered are
+  indigo stitches. Status colours are dyes and appear only where they carry
+  meaning: weld (ochre) needs attention, madder (red) is critical, verdigris
+  marks an online row badge. New devices are ink.
+* Bahnschrift (shipped with Windows 10 and 11) for the wordmark and titles;
+  Segoe UI for everything you read. Weight, not size, carries the
+  hierarchy (9 / 10 / 13 pt).
 
 Icons are PNGs drawn by ``tools/make_icons.py``. Each table row shows the
 device-type glyph with a small status badge composited onto its corner at
@@ -28,25 +34,25 @@ from tkinter import ttk
 
 @dataclass(frozen=True)
 class Palette:
-    # System colours: white surfaces, black text, one blue accent.
-    ink: str = "#000000"           # primary text
-    ink_2: str = "#404040"         # secondary text
-    ink_3: str = "#767676"         # tertiary text, placeholders
+    # Ink on white, cool loom-steel chrome, one indigo accent.
+    ink: str = "#1B2033"           # primary text: indigo-black ink
+    ink_2: str = "#454B5E"         # secondary text
+    ink_3: str = "#737889"         # tertiary text, placeholders
     paper: str = "#FFFFFF"         # work surfaces
-    chrome: str = "#F3F3F3"        # window background, rails, bars
-    hairline: str = "#D4D4D4"      # borders and dividers
-    hover: str = "#EBEBEB"
-    accent: str = "#0063B1"        # blue: primary action, selection, map
-    accent_hover: str = "#004E8C"
-    accent_soft: str = "#DDEBF7"   # selected row, current nav item
-    accent_muted: str = "#8AB4DE"
-    # Status colours, used only where they carry meaning (badges, map).
-    ok: str = "#107C10"
-    warn: str = "#D85E00"
-    danger: str = "#C42B1C"
-    new: str = "#000000"           # new devices: black, so it never reads as the accent
-    row_alt: str = "#FAFAFA"
-    empty_cell: str = "#E6E6E6"
+    chrome: str = "#EEF0F4"        # window background, rails, bars (loom steel)
+    hairline: str = "#D3D7E0"      # borders and dividers
+    hover: str = "#E4E7EE"
+    accent: str = "#2B3F96"        # indigo: primary action, selection, weave
+    accent_hover: str = "#1F2F78"
+    accent_soft: str = "#E1E5F4"   # selected row, current nav item
+    accent_muted: str = "#9AA6D6"
+    # Status colours are textile dyes, used only where they carry meaning.
+    ok: str = "#2E7556"            # verdigris: online
+    warn: str = "#A86B00"          # weld: needs attention
+    danger: str = "#B03A2E"        # madder: critical
+    new: str = "#1B2033"           # new devices: ink, so it never reads as the accent
+    row_alt: str = "#F8F9FB"
+    empty_cell: str = "#E3E6EC"    # an address that did not answer: bare thread
 
     # Aliases kept for older call sites.
     @property
@@ -80,10 +86,14 @@ class Palette:
 
 PALETTE = Palette()
 
+#: Wordmark and titles: Bahnschrift ships with Windows 10 and 11. Where it is
+#: missing :func:`setup_style` uses ``UI_FONT_BOLD``'s family, one point smaller.
+BRAND_FAMILY = "Bahnschrift SemiBold"
 UI_FONT = ("Segoe UI", 9)
 UI_FONT_BOLD = ("Segoe UI Semibold", 9)
 BODY_FONT = ("Segoe UI", 10)
-TITLE_FONT = ("Segoe UI Semibold", 13)
+TITLE_SIZE = 14
+WORDMARK_SIZE = 13
 SUBTITLE_FONT = ("Segoe UI Semibold", 10)
 MONO_FONT = ("Consolas", 10)
 
@@ -102,6 +112,14 @@ def px(value: float) -> int:
 
 def current() -> Palette:
     return PALETTE
+
+
+def _brand_font(root: tk.Misc, size: int) -> tuple[str, int]:
+    """Bahnschrift when installed, else the bold UI family one point smaller."""
+    probe = tkfont.Font(root, family=BRAND_FAMILY, size=size)
+    if probe.actual("family").lower() == BRAND_FAMILY.lower():
+        return BRAND_FAMILY, size
+    return UI_FONT_BOLD[0], size - 1
 
 
 def setup_style(root: tk.Misc) -> ttk.Style:
@@ -150,9 +168,10 @@ def setup_style(root: tk.Misc) -> ttk.Style:
     style.configure("Secondary.TLabel", background=p.paper, foreground=p.ink_2)
     style.configure("Warn.TLabel", background=p.paper, foreground=p.danger)
     style.configure("PaperWarn.TLabel", background=p.paper, foreground=p.danger)
-    style.configure("Title.TLabel", background=p.paper, font=TITLE_FONT)
+    style.configure("Title.TLabel", background=p.paper, font=_brand_font(root, TITLE_SIZE))
     style.configure("Subtitle.TLabel", background=p.paper, font=SUBTITLE_FONT)
-    style.configure("Brand.TLabel", background=p.paper, font=("Segoe UI Semibold", 11))
+    style.configure("Brand.TLabel", background=p.paper, foreground=p.ink,
+                    font=_brand_font(root, WORDMARK_SIZE))
     style.configure("Status.TLabel", background=p.chrome, foreground=p.ink_2,
                     padding=(px(8), px(3)))
 

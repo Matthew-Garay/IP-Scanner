@@ -177,7 +177,7 @@ def load_json(path: str | Path) -> tuple[list[Device], dict]:
         raise ValueError(f"{Path(path).name} is not valid JSON ({exc.msg}, line {exc.lineno})") \
             from None
     if not isinstance(payload, dict) or not isinstance(payload.get("devices"), list):
-        raise ValueError(f"{Path(path).name} is not an WeftScan results file")
+        raise ValueError(f"{Path(path).name} is not a WeftScan results file")
     try:
         devices = [device_from_dict(item) for item in payload["devices"]]
     except (KeyError, TypeError, ValueError) as exc:

@@ -2,8 +2,8 @@
 
 * :class:`DeviceTree`   - results grid: one row per device with a type icon,
                           expandable to its open services and shared folders.
-* :class:`AddressMap`   - one cell per address of the scanned range; filled
-                          cells are devices that answered.
+* :class:`AddressMap`   - the weave: one stitch per address of the scanned
+                          range; raised stitches are devices that answered.
 * :class:`DetailsPanel` - header (icon, name, type) and a property grid for
                           the selected device.
 * :class:`ViewStack`    - left navigation rail switching between views.
@@ -18,8 +18,9 @@ from __future__ import annotations
 import ipaddress
 import textwrap
 import tkinter as tk
+from tkinter import font as tkfont
 from tkinter import ttk
-from typing import Callable
+from typing import Callable, NamedTuple
 
 from .. import i18n
 from ..core.devicetype import category_name
@@ -259,15 +260,32 @@ class ViewStack:
 # --------------------------------------------------------------------------- #
 # Address map
 # --------------------------------------------------------------------------- #
-class AddressMap(tk.Canvas):
-    """One cell per address in the scanned range, like a patch panel.
+class _WeaveGeometry(NamedTuple):
+    per_row: int      # stitches per row (one row of addresses = one weft thread)
+    rows: int
+    cell: float       # horizontal pitch of a stitch
+    height: int       # height of a bare stitch
+    gap: int          # space between stitches
+    rise: int         # how far an answered stitch stands out of its row
+    pitch: int        # vertical distance between rows
 
-    Filled cells are devices that answered; their colour follows the row's
-    status. Hovering shows the address, clicking selects the device.
+
+class AddressMap(tk.Canvas):
+    """The weave: one stitch per address in the scanned range.
+
+    Each row of addresses is a weft thread running across the strip. An
+    address that did not answer is bare warp: the thread passes over every
+    other one, which gives the strip its woven look. A device that answered
+    is a raised stitch dyed with its row's status. Hovering shows the
+    address, clicking selects the device.
     """
 
     MAX_CELLS = 1024
     PER_ROW = 128
+    CAPTION = "Each stitch is one address{of}. Raised stitches answered; click one to "               "select that device."
+    #: Row status -> palette colour of the stitch.
+    DYES = {"online": "accent", "favorite": "accent", "new": "ink", "risk": "warn",
+            "danger": "danger"}
 
     def __init__(self, master, on_select: Callable[[str], None] | None = None,
                  on_hover: Callable[[str], None] | None = None):
@@ -277,14 +295,22 @@ class AddressMap(tk.Canvas):
         self._on_select = on_select
         self._on_hover = on_hover
         self._addresses: list[str] = []
+        self._index: dict[str, int] = {}
         self._states: dict[str, str] = {}
         self._labels: dict[str, str] = {}
         self._selected = ""
         self._cells: dict[str, int] = {}
+        self._ip_by_item: dict[int, str] = {}
+        self._geom: _WeaveGeometry | None = None
         self.bind("<Configure>", lambda _e: self._draw())
         self.bind("<Motion>", self._motion)
         self.bind("<Leave>", lambda _e: self._on_hover and self._on_hover(""))
         self.bind("<Button-1>", self._click)
+
+    @classmethod
+    def caption(cls, target: str = "") -> str:
+        """Help line shown under the weave."""
+        return cls.CAPTION.format(of=f" of {target}" if target else "")
 
     @property
     def visible(self) -> bool:
@@ -292,6 +318,7 @@ class AddressMap(tk.Canvas):
 
     def set_range(self, addresses: list[str]) -> None:
         self._addresses = list(addresses) if len(addresses) <= self.MAX_CELLS else []
+        self._index = {ip: i for i, ip in enumerate(self._addresses)}
         self._states.clear()
         self._labels.clear()
         self._selected = ""
@@ -300,65 +327,86 @@ class AddressMap(tk.Canvas):
     def set_device(self, ip: str, state: str, label: str = "") -> None:
         self._states[ip] = state
         self._labels[ip] = label
-        cell = self._cells.get(ip)
-        if cell is not None:
-            self.itemconfigure(cell, fill=self._colour(ip))
-        elif ip in self._addresses:
+        if ip in self._cells:
+            self._style_cell(ip)
+        elif ip in self._index:
             self._draw()
 
     def select(self, ip: str) -> None:
         previous, self._selected = self._selected, ip
         for address in (previous, ip):
-            cell = self._cells.get(address)
-            if cell is not None:
-                self.itemconfigure(cell, outline=self._outline(address),
-                                   width=2 if address == ip else 1)
+            if address in self._cells:
+                self._style_cell(address)
 
     def _colour(self, ip: str) -> str:
+        """Dye of a stitch; an empty string lets the thread show through."""
         pal = theme.PALETTE
-        return {
-            "online": pal.accent, "new": pal.ink, "risk": pal.warn, "danger": pal.danger,
-            "favorite": pal.accent,
-        }.get(self._states.get(ip, ""), pal.empty_cell)
+        state = self._states.get(ip)
+        if state is not None:
+            return getattr(pal, self.DYES.get(state, "accent"))
+        # Bare warp: the weft passes over every other address.
+        column = self._index.get(ip, 0) % self._geom.per_row
+        return pal.empty_cell if column % 2 == 0 else ""
 
-    def _outline(self, ip: str) -> str:
-        return theme.PALETTE.ink if ip == self._selected else self._colour(ip)
+    def _style_cell(self, ip: str) -> None:
+        """Place and dye one stitch from the current geometry and state."""
+        g = self._geom
+        cell = self._cells[ip]
+        row, column = divmod(self._index[ip], g.per_row)
+        x0 = column * g.cell
+        y0 = g.rise + row * g.pitch
+        raised = ip in self._states
+        lift = g.rise if raised else 0
+        self.coords(cell, x0, y0 - lift, x0 + max(1.0, g.cell - g.gap), y0 + g.height + lift)
+        fill = self._colour(ip)
+        selected = ip == self._selected
+        self.itemconfigure(cell, fill=fill, outline=theme.PALETTE.ink if selected else fill,
+                           width=2 if selected else 1)
+        if raised or selected:
+            self.tag_raise(cell)
 
-    def _layout(self) -> tuple[int, int, float, float]:
+    def _measure(self) -> _WeaveGeometry:
         count = len(self._addresses)
         per_row = min(count, self.PER_ROW) or 1
         rows = (count + per_row - 1) // per_row
-        width = max(1, self.winfo_width())
-        cell = width / per_row
+        cell = max(1, self.winfo_width()) / per_row
         height = theme.px(9) if rows > 1 else theme.px(16)
-        return per_row, rows, cell, height
+        rise = 1 if height < theme.px(12) else 2
+        return _WeaveGeometry(per_row, rows, cell, height, 1 if cell < 6 else 2, rise,
+                              height + 2 + rise)
 
     def _draw(self) -> None:
         self.delete("all")
         self._cells.clear()
+        self._ip_by_item.clear()
         if not self.visible:
             self.configure(height=1)
             return
-        per_row, rows, cell, height = self._layout()
-        gap = 1 if cell < 6 else 2
-        self.configure(height=int(rows * (height + 2)))
-        for index, ip in enumerate(self._addresses):
-            row, column = divmod(index, per_row)
-            x0 = column * cell
-            y0 = row * (height + 2)
-            self._cells[ip] = self.create_rectangle(
-                x0, y0, x0 + max(1.0, cell - gap), y0 + height,
-                fill=self._colour(ip), outline=self._outline(ip),
-                width=2 if ip == self._selected else 1)
+        g = self._geom = self._measure()
+        self.configure(height=g.rows * g.pitch + g.rise)
+        thread = max(1, theme.px(2))
+        for row in range(g.rows):
+            # The weft: one thread per row of addresses, drawn underneath.
+            mid = g.rise + row * g.pitch + g.height / 2
+            used = min(g.per_row, len(self._addresses) - row * g.per_row)
+            self.create_rectangle(0, mid - thread / 2, used * g.cell - g.gap, mid + thread / 2,
+                                  fill=theme.PALETTE.hairline, outline="")
+        for ip in self._addresses:
+            item = self._cells[ip] = self.create_rectangle(0, 0, 0, 0)
+            self._ip_by_item[item] = ip
+            self._style_cell(ip)
 
     def _address_at(self, x: float, y: float) -> str:
+        """Address of the stitch under the pointer, from what is drawn.
+
+        Raised stitches stand out of their row and sit on top of the stack,
+        so the topmost item hit is the stitch the pointer is actually on.
+        """
         if not self.visible:
             return ""
-        per_row, _rows, cell, height = self._layout()
-        column, row = int(x // cell), int(y // (height + 2))
-        index = row * per_row + column
-        if 0 <= column < per_row and 0 <= index < len(self._addresses):
-            return self._addresses[index]
+        for item in reversed(self.find_overlapping(x, y, x, y)):
+            if item in self._ip_by_item:
+                return self._ip_by_item[item]
         return ""
 
     def _motion(self, event) -> None:
@@ -866,6 +914,20 @@ class DetailsPanel(ttk.Frame):
             row = self._row(security, finding.severity.capitalize(), title, finding.severity)
             for extra in textwrap.wrap(detail, self.WRAP):
                 self._grid.insert(row, "end", text="", values=(extra,), tags=("muted",))
+        self._fit_label_column()
+
+    def _fit_label_column(self) -> None:
+        """Size the label column to its longest label, so none is cut off."""
+        regular = tkfont.Font(font=theme.UI_FONT)
+        bold = tkfont.Font(font=theme.UI_FONT_BOLD)
+        indent = theme.px(20)          # ttk.Treeview's indent per level
+        widest = 0
+        for group in self._grid.get_children():
+            widest = max(widest, bold.measure(self._grid.item(group, "text")) + indent)
+            for row in self._grid.get_children(group):
+                widest = max(widest, regular.measure(self._grid.item(row, "text")) + 2 * indent)
+        width = min(max(widest + theme.px(12), theme.px(100)), theme.px(200))
+        self._grid.column("#0", width=width)
 
     def _copy_value(self, _event=None) -> None:
         iid = self._grid.focus()

@@ -1,4 +1,8 @@
-# WeftScan Network and Port Scanner
+# WeftScan
+
+**See the whole weave of your network.**
+
+WeftScan is a free, open-source network scanner and security audit for Windows, made for IT technicians and whoever looks after a small office network. It finds every device, tells you what each one is, checks its open ports and points out the loose threads: the services that put the network at risk.
 
 ![Devices view showing a sample office network](docs/screenshots/devices.png)
 
@@ -14,7 +18,7 @@ The program follows a layered architecture where each layer only imports from th
 
 - **Network scan:** host discovery (ARP sweep, ICMP and TCP probes) plus TCP port scanning, including VPN subnets.
 - **Device identification:** listens to what devices announce about themselves over **SSDP/UPnP** (friendly name, manufacturer, exact model) and **mDNS/DNS-SD** (published services such as AirPlay, Google Cast or IPP printing), combines it with NetBIOS/DNS names, MAC vendors, randomized-MAC detection, open ports and the OS fingerprint, and sorts every host into one of 18 categories, each with its own icon: computer, laptop, server, router, access point, phone, tablet, printer, camera, TV, media player, speaker, game console, network storage, smart home, network device, this computer and unknown.
-- **Address map:** a strip with one cell per address of the range, filled where a device answered and coloured by status; click a cell to jump to the device.
+- **The weave:** the address range drawn as a woven strip, one stitch per address. Devices that answered are raised stitches dyed by status; click one to jump to the device.
 - **Scan profiles:** Quick, Standard (top ~100 ports), Full (1-1024), IoT / Cameras, Ping sweep only, and Custom port lists such as `22,80,443,8000-8100`.
 - **Automatic range:** the app detects the network you are on and keeps the range up to date when you move to another network; a range you type yourself is kept.
 - **Scan options:** network adapter selector, timeout, thread count, hostname resolution and model identification toggles.

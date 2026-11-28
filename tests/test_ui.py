@@ -392,3 +392,38 @@ class PureHelpers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(_GUI, "the interface needs tkinter")
+class Weave(WindowTestCase):
+    """The address map drawn as a weave: hits follow the drawn stitches."""
+
+    def _weave(self, count):
+        from weftscan.interface.widgets import AddressMap
+
+        weave = AddressMap(self.app)
+        weave.place(x=0, y=0, width=1280)
+        self.app.update_idletasks()
+        addresses = [f"10.0.{i // 256}.{i % 256}" for i in range(count)]
+        weave.set_range(addresses)
+        return weave, addresses
+
+    def test_a_raised_stitch_picks_its_own_row(self):
+        weave, addresses = self._weave(256)
+        upper, lower = addresses[0], addresses[weave.PER_ROW]
+        weave.set_device(upper, "online")
+        weave.set_device(lower, "risk")
+        x0, y0, x1, _y1 = weave.coords(weave._cells[lower])
+        # The top edge of the lower stitch stands out into the row above.
+        self.assertEqual(weave._address_at((x0 + x1) / 2, y0 + 0.5), lower)
+
+    def test_answering_raises_and_dyes_the_stitch(self):
+        weave, addresses = self._weave(16)
+        ip = addresses[1]
+        before = weave.coords(weave._cells[ip])
+        weave.set_device(ip, "danger")
+        after = weave.coords(weave._cells[ip])
+        self.assertLess(after[1], before[1])
+        self.assertGreater(after[3], before[3])
+        from weftscan.interface import theme
+        self.assertEqual(weave.itemcget(weave._cells[ip], "fill"), theme.PALETTE.danger)
